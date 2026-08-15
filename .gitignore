@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+
+.idea/
+.vscode/
+.last-*-check
+*:Zone.Identifier*
+See
+
+# User-owned ROMs, saves, statistics, and profile identifiers.
+roms/
+profiles/
+
+# Runtime output.
+screenshots/
+stats/
+*.log
+*.sav
+*.ss[0-9]
+*.db
+
+# Local virtual environments.
+.venv/
+venv/

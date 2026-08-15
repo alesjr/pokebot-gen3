@@ -1,0 +1,26 @@
+gameplay:
+  progression: area
+  starter: Mudkip
+  fossil: Root Fossil
+  founder_min_iv_sum: 93
+quality:
+  shiny: true
+  perfect_ivs: true
+duplicates: keep_until_full
+recovery:
+  mode: rollback
+  max_attempts: 3
+rtc:
+  mode: historical_wallclock
+  ruby_sapphire_epoch: '2003-08-25'
+  emerald_epoch: '2005-11-21'
+rng:
+  mode: disabled
+  targets:
+    - wild
+    - static
+    - starter
+transfer:
+  gen4_game: Diamond
+  pal_park_date: '2007-08-27'
+distributions_directory: distributions

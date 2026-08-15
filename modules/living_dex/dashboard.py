@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+from datetime import datetime
+from queue import Queue
+
+from modules.clock import get_clock_time
+from modules.context import context
+from modules.living_dex.collection import CollectionSnapshot
+from modules.living_dex.progress import LivingDexProgress
+from modules.living_dex.quests import quest_snapshot
+from modules.main import work_queue
+from modules.player import get_player
+from modules.pokedex import get_pokedex
+from modules.pokemon import get_species_by_national_dex
+from modules.pokemon_party import get_party
+from modules.pokemon_storage import get_pokemon_storage
+
+
+def _build_snapshot() -> dict:
+    profile = context.profile.path
+    player = get_player()
+    pokedex = get_pokedex()
+    storage = get_pokemon_storage()
+    collection = CollectionSnapshot.from_storage(storage)
+    progress = LivingDexProgress.load(profile)
+    seen = {s.national_dex_number for s in pokedex.seen_species}
+    owned = {s.national_dex_number for s in pokedex.owned_species}
+    collected = collection.keys()
+    species = []
+    for number in range(1, 387):
+        item = get_species_by_national_dex(number)
+        variants = sorted(entry.variant for entry in collection.collected if entry.national_dex_number == number)
+        species.append({
+            "number": number,
+            "name": item.name,
+            "seen": number in seen,
+            "owned": number in owned,
+            "qualified": any(key[0] == item.name for key in collected),
+            "variants": variants,
+        })
+    clock = get_clock_time()
+    party = get_party()
+    return {
+        "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "game": context.rom.game_name,
+        "profile": profile.name,
+        "trainer": {"name": player.name, "tid": player.trainer_id, "sid": player.secret_id},
+        "paths": {
+            "profile": str(profile.resolve()),
+            "save": str((profile / "current_save.sav").resolve()),
+            "rom": str(context.rom.file.resolve()),
+        },
+        "rtc": {"days": clock.days, "hours": clock.hours, "minutes": clock.minutes, "seconds": clock.seconds},
+        "progress": {
+            "objective": progress.current_objective,
+            "founder": progress.founder_species,
+            "starter_stored": progress.starter_stored,
+            "qualified": len(collection.collected),
+            "box_used": collection.pokemon_count,
+            "box_capacity": collection.capacity,
+        },
+        "party": party.to_list(),
+        "boxes": storage.to_dict(),
+        "quests": quest_snapshot(),
+        "pokedex": species,
+    }
+
+
+def snapshot_via_main_thread(timeout: float = 3.0) -> dict:
+    result: Queue = Queue(maxsize=1)
+
+    def callback() -> None:
+        try:
+            result.put((True, _build_snapshot()))
+        except Exception as error:
+            result.put((False, str(error)))
+
+    work_queue.put(callback)
+    try:
+        ok, value = result.get(timeout=timeout)
+    except Exception:
+        return {"error": "emulator did not answer", "pokedex": [], "quests": []}
+    return value if ok else {"error": value, "pokedex": [], "quests": []}

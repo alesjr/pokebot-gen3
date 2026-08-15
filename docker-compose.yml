@@ -1,0 +1,49 @@
+services:
+  pokebot:
+    build: .
+    container_name: pokebot-gen3
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./roms:/app/roms
+      - ./profiles:/app/profiles
+      - ./saves:/app/saves
+      - ./screenshots:/app/screenshots
+      - ./stats:/app/stats
+      - ./logs:/app/logs
+      - ./config:/app/config
+      - ./plugins:/app/plugins
+    ports:
+      - "8888:8888"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - POKEBOT_PROFILE=${POKEBOT_PROFILE:-Sapphire}
+    command: >
+      sh -lc "python pokebot.py ${POKEBOT_PROFILE:-Sapphire} -hl -nv -na"
+    restart: unless-stopped
+
+  pokebot-gui:
+    build: .
+    container_name: pokebot-gen3-gui
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./roms:/app/roms
+      - ./profiles:/app/profiles
+      - ./saves:/app/saves
+      - ./screenshots:/app/screenshots
+      - ./stats:/app/stats
+      - ./logs:/app/logs
+      - ./config:/app/config
+      - ./plugins:/app/plugins
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    ports:
+      - "8889:8888"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - POKEBOT_PROFILE=${POKEBOT_PROFILE:-Sapphire}
+    command: >
+      sh -lc "python pokebot.py ${POKEBOT_PROFILE:-Sapphire} -na"
+    restart: unless-stopped

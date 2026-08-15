@@ -1,0 +1,15 @@
+confz==2.0.1
+numpy~=2.1.0
+setuptools
+ruamel.yaml~=0.18.2
+rich~=13.5.2
+cffi~=1.17.1
+Pillow~=10.4.0
+sounddevice~=0.4.6
+pyperclip3~=0.4.1
+plyer~=2.1.0
+notify-py~=0.3.42
+ttkthemes~=3.2.2
+darkdetect~=0.8.0
+show-in-file-manager~=1.1.4
+aiohttp~=3.10.9
