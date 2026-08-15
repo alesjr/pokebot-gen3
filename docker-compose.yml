@@ -48,7 +48,9 @@ services:
       - "${POKEBOT_GUI_DASHBOARD_PORT:-8889}:8888"
     environment:
       PYTHONUNBUFFERED: "1"
-      DISPLAY: ${DISPLAY:?DISPLAY must be set for the GUI container}
+      # Script validates DISPLAY before starting GUI. Fallback keeps headless
+      # Compose commands usable on hosts without an X11 session.
+      DISPLAY: ${DISPLAY:-:0}
       QT_X11_NO_MITSHM: "1"
     volumes:
       - ./roms:/app/roms:ro

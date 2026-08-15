@@ -137,6 +137,28 @@ esses dados.
 Antes da execução headless, crie ou importe o perfil pela GUI. O nome informado
 em `POKEBOT_PROFILE` deve corresponder ao diretório em `profiles/`.
 
+### Atalho recomendado
+
+O script `pokebot-docker.sh` controla imagem, emulador e dashboard:
+
+```bash
+./pokebot-docker.sh gui Sapphire
+./pokebot-docker.sh headless Emerald
+./pokebot-docker.sh status
+./pokebot-docker.sh logs
+./pokebot-docker.sh stop
+```
+
+Sem argumentos, inicia GUI usando perfil `Sapphire`:
+
+```bash
+./pokebot-docker.sh
+```
+
+No modo `gui`, dashboard fica em `http://localhost:8889/`. No modo `headless`,
+fica em `http://localhost:8888/`. O script para serviço oposto antes de iniciar,
+impedindo dois containers de escreverem no mesmo save.
+
 Headless, modo Living Dex e dashboard na porta `8888`:
 
 ```bash
