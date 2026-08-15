@@ -25,8 +25,10 @@ def get_bot_modes() -> list[Type[BotMode]]:
         from .item_steal import ItemStealMode
         from .kecleon import KecleonMode
         from .level_grind import LevelGrindMode
+        from .living_dex import LivingDexMode
         from .nugget_bridge import NuggetBridgeMode
         from .puzzle_solver import PuzzleSolverMode
+        from .roamer_reencounter import RoamerReencounterMode
         from .roamer_reset import RoamerResetMode
         from .rock_smash import RockSmashMode
         from .safari import SafariMode
@@ -37,7 +39,6 @@ def get_bot_modes() -> list[Type[BotMode]]:
         from .static_gift_resets import StaticGiftResetsMode
         from .static_soft_resets import StaticSoftResetsMode
         from .sweet_scent import SweetScentMode
-        from .living_dex import LivingDexMode
 
         _bot_modes = [
             BerryBlendMode,
@@ -50,8 +51,10 @@ def get_bot_modes() -> list[Type[BotMode]]:
             ItemStealMode,
             KecleonMode,
             LevelGrindMode,
+            LivingDexMode,
             NuggetBridgeMode,
             PuzzleSolverMode,
+            RoamerReencounterMode,
             RoamerResetMode,
             RockSmashMode,
             SafariMode,
@@ -62,7 +65,6 @@ def get_bot_modes() -> list[Type[BotMode]]:
             StaticSoftResetsMode,
             SweetScentMode,
             SudowoodoMode,
-            LivingDexMode,
         ]
 
         for mode in plugin_get_additional_bot_modes():

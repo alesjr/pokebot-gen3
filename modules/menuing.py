@@ -1,9 +1,10 @@
 from enum import IntEnum
-from typing import Generator
+from typing import Generator, Iterable
 
 from modules.context import context
+from modules.debug import debug
 from modules.game_stats import get_game_stat, GameStat
-from modules.items import Item, get_item_bag
+from modules.items import Item, get_item_bag, ItemPocket
 from modules.memory import GameState, get_event_flag, get_game_state, read_symbol, unpack_uint16
 from modules.menu_parsers import (
     CursorOptionEmerald,
@@ -17,8 +18,9 @@ from modules.menu_parsers import (
 )
 from modules.modes._asserts import assert_has_pokemon_with_any_move
 from modules.modes._interface import BotModeError
+from modules.player import player_avatar_is_controllable
 from modules.pokemon import get_move_by_name
-from modules.pokemon_party import get_party, get_party_size
+from modules.pokemon_party import get_party, get_party_size, PartyPokemon
 from modules.tasks import get_task, task_is_active
 
 
@@ -68,6 +70,20 @@ def scroll_to_item_in_bag(item: Item) -> Generator:
 
     :param item: Item to scroll to
     """
+    slot_index = get_item_bag().first_slot_index_for(item)
+    if slot_index is None:
+        raise RuntimeError(f"Could not find any {item.name}")
+    yield from scroll_to_item_slot(item.pocket, slot_index)
+
+
+def scroll_to_item_slot(pocket: ItemPocket, slot_index: int) -> Generator:
+    """
+    This will scroll inside the item bag menu to reach a certain slot in a certain
+    item bag pocket.
+
+    :param pocket: The pocket to open.
+    :param slot_index: The index number to scroll to in that pocket.
+    """
 
     def open_pocket_index() -> int:
         if context.rom.is_emerald:
@@ -89,6 +105,11 @@ def scroll_to_item_in_bag(item: Item) -> Generator:
             scroll_position = unpack_uint16(read_symbol("gBagMenuState", offset=14 + (bag_index * 2), size=2))
         return cursor_position + scroll_position
 
+    if len(get_item_bag().pocket_for(pocket)) <= slot_index:
+        raise RuntimeError(
+            f"There is no slot index {slot_index} in the '{pocket.name}' pocket. It only has {len(get_item_bag().pocket_for(pocket))} slots."
+        )
+
     # Wait for fade-in to finish (happens when the bag is opened, during which time inputs
     # are not yet active.)
     while (
@@ -98,7 +119,7 @@ def scroll_to_item_in_bag(item: Item) -> Generator:
         yield
 
     # Select the correct pocket
-    target_pocket_index = item.pocket.index
+    target_pocket_index = pocket.index
     while open_pocket_index() != target_pocket_index:
         if open_pocket_index() < target_pocket_index:
             context.emulator.press_button("Right")
@@ -108,9 +129,6 @@ def scroll_to_item_in_bag(item: Item) -> Generator:
             yield
 
     # Scroll to the item
-    slot_index = get_item_bag().first_slot_index_for(item)
-    if slot_index is None:
-        raise RuntimeError(f"Could not find any {item.name}")
     while currently_selected_slot() != slot_index:
         if currently_selected_slot() < slot_index:
             context.emulator.press_button("Down")
@@ -165,6 +183,7 @@ class BaseMenuNavigator:
         self.navigator = None
         self.current_step = step
 
+    @debug.track
     def step(self):
         """
         Iterates through the steps of navigating the menu for the desired outcome.
@@ -502,6 +521,15 @@ class PokemonPartyMenuNavigator(BaseMenuNavigator):
                     self.navigator = None
                     self.subnavigator = None
 
+        if self.primary_option in (
+            CursorOptionEmerald.SWEET_SCENT,
+            CursorOptionFRLG.SWEET_SCENT,
+            CursorOptionRS.SWEET_SCENT,
+        ):
+            while get_game_state() is not GameState.OVERWORLD or not player_avatar_is_controllable():
+                yield
+            self.current_step = "exit"
+
     def select_switch(self):
         if self.game in ["POKEMON EMER", "POKEMON FIRE", "POKEMON LEAF"]:
             while not task_is_active("Task_HandleSelectionMenuInput"):
@@ -648,150 +676,49 @@ def get_items_available_for_pickup() -> list[str]:
         ]
 
 
-class CheckForPickup(BaseMenuNavigator):
-    """
-    class that handles pickup farming.
-    """
+def take_held_items_from_multiple_party_pokemon(
+    list_of_party_indices: Iterable[int], force_checking: bool = False
+) -> Generator[None, None, list[Item]]:
+    # Check whether these Pokémon actually have a held item, and whether
+    # there is space for it in the item bag.
+    verified_list_of_party_indices = set()
+    for party_index in list_of_party_indices:
+        if len(get_party()) <= party_index:
+            continue
 
-    def __init__(self):
-        super().__init__()
-
-        self.possible_pickup_items = get_items_available_for_pickup()
-        self.party = get_party()
-        self.pokemon_with_pickup = 0
-        self.pokemon_with_pickup_and_item = []
-        self.picked_up_items = []
-        self.current_mon = -1
-        self.pickup_threshold_met = None
-        self.check_threshold_met = False
-        self.check_pickup_threshold()
-        self.checked = False
-        self.game = context.rom.game_title
-        self.party_menu_opener = None
-        self.party_menu_navigator = None
-
-    def get_pokemon_with_pickup_and_item(self):
-        for i, mon in enumerate(self.party):
-            if mon.ability.name == "Pickup":
-                self.pokemon_with_pickup += 1
-                if mon.held_item is not None and mon.held_item.name in self.possible_pickup_items:
-                    self.pokemon_with_pickup_and_item.append(i)
-                    self.picked_up_items.append(mon.held_item)
-
-    def check_pickup_threshold(self):
-        if context.config.cheats.faster_pickup:
-            self.check_threshold_met = True
-            self.checked = True
-        else:
-            self.check_threshold_met = (
-                get_game_stat(GameStat.TOTAL_BATTLES) % context.config.battle.pickup_check_frequency == 0
-            )
-        self.get_pokemon_with_pickup_and_item()
-        if context.config.battle.pickup_threshold > self.pokemon_with_pickup > 0:
-            threshold = self.pokemon_with_pickup
-            context.message = (
-                f"Number of pickup pokemon is {threshold}, which is lower than config. "
-                f"Using party value of {threshold} instead."
-            )
-        else:
-            threshold = context.config.battle.pickup_threshold
-        self.pickup_threshold_met = self.check_threshold_met and len(self.pokemon_with_pickup_and_item) >= threshold
-        if self.pickup_threshold_met:
-            context.stats.log_pickup_items(self.picked_up_items)
-            context.message = "Pickup threshold is met! Gathering items..."
-
-    def open_party_menu(self):
-        while not party_menu_is_open():
-            if self.party_menu_opener is None:
-                self.party_menu_opener = StartMenuNavigator("POKEMON")
-            if self.party_menu_opener.current_step != "exit":
-                yield from self.party_menu_opener.step()
-            else:
-                context.emulator.press_button("A")
-                yield
-
-    def return_to_party_menu(self):
-        if self.game in ["POKEMON EMER", "POKEMON FIRE", "POKEMON LEAF"]:
-            while task_is_active("Task_PrintAndWaitForText"):
-                context.emulator.press_button("B")
-                yield
-        else:
-            while (
-                task_is_active("HANDLEDEFAULTPARTYMENU")
-                and task_is_active("HANDLEPARTYMENUSWITCHPOKEMONINPUT")
-                and task_is_active("HANDLEBATTLEPARTYMENU")
-            ):
-                context.emulator.press_button("B")
-                yield
-
-    def should_open_party_menu(self):
+        pokemon: PartyPokemon = get_party()[party_index]
         if (
-            not context.config.cheats.faster_pickup
-            and self.check_threshold_met
-            and not self.checked
-            and self.pokemon_with_pickup > 0
+            pokemon.is_valid
+            and not pokemon.is_egg
+            and (held_item := pokemon.held_item) is not None
+            and get_item_bag().has_space_for(held_item)
         ):
-            return True
-        elif self.pickup_threshold_met:
-            return True
-        else:
-            return False
+            verified_list_of_party_indices.add(party_index)
 
-    def check_space_in_bag(self):
-        if self.current_mon is not None:
-            pokemon = self.party[self.current_mon]
-            if not get_item_bag().has_space_for(pokemon.held_item):
-                context.message = (
-                    f"Item bag is full! {pokemon.species.name} (party slot #{self.current_mon + 1}) is holding a "
-                    f"{pokemon.held_item.name} but there is no space left for it in the bag."
-                )
-                context.set_manual_mode()
+    # Do nothing if none of the Pokémon qualify.
+    if len(verified_list_of_party_indices) == 0 and not force_checking:
+        return []
 
-    def get_next_func(self):
-        match self.current_step:
-            case "None":
-                if self.should_open_party_menu():
-                    self.current_step = "open_party_menu"
-                else:
-                    self.current_step = "exit"
-            case "open_party_menu":
-                self.checked = True
-                if self.pickup_threshold_met and len(self.pokemon_with_pickup_and_item) > 0:
-                    self.current_mon = self.pokemon_with_pickup_and_item[0]
-                    self.check_space_in_bag()
-                    self.current_step = "take_mon_item"
-                else:
-                    self.current_step = "exit_to_overworld"
-            case "take_mon_item":
-                self.current_step = "return_to_party_menu"
-            case "return_to_party_menu":
-                if self.current_mon == self.pokemon_with_pickup_and_item[-1]:
-                    self.current_step = "exit_to_overworld"
-                else:
-                    self.get_next_mon()
-                    self.current_step = "take_mon_item"
-            case "exit_to_overworld":
-                self.current_step = "exit"
+    # Open Party Menu
+    yield from StartMenuNavigator("POKEMON").step()
 
-    def get_next_mon(self):
-        next_idx = self.pokemon_with_pickup_and_item.index(self.current_mon) + 1
-        if next_idx > len(self.pokemon_with_pickup_and_item) - 1:
-            context.message = "I forgot how to count, switching to manual mode..."
-            context.set_manual_mode()
-        else:
-            self.current_mon = self.pokemon_with_pickup_and_item[next_idx]
-            self.check_space_in_bag()
+    list_of_retrieved_items = []
+    for party_index in sorted(verified_list_of_party_indices):
+        # We already checked whether there was space in the item bag before, but
+        # if we fetch items from multiple Pokémon it's possible that the last
+        # remaining spot got used up by the Pokémon before. That's why we're
+        # checking again. If there is no space left, we just skip silently.
+        if not get_item_bag().has_space_for(get_party()[party_index].held_item):
+            continue
 
-    def update_navigator(self):
-        match self.current_step:
-            case "open_party_menu":
-                self.navigator = self.open_party_menu()
-            case "take_mon_item":
-                self.navigator = PokemonPartyMenuNavigator(idx=self.current_mon, mode="take_item").step()
-            case "return_to_party_menu":
-                self.navigator = self.return_to_party_menu()
-            case "exit_to_overworld":
-                self.navigator = PartyMenuExit().step()
+        list_of_retrieved_items.append(get_party()[party_index].held_item)
+        yield from PokemonPartyMenuNavigator(idx=party_index, mode="take_item").step()
+
+    # Exit party menu
+    yield from PartyMenuExit().step()
+    yield
+
+    return list_of_retrieved_items
 
 
 class PartyMenuExit(BaseMenuNavigator):
@@ -846,9 +773,19 @@ def should_check_for_pickup():
     if not context.config.battle.pickup:
         return False
 
+    items_available_for_pickup = get_items_available_for_pickup()
+    if not any(
+        [
+            pokemon.ability.name == "Pickup"
+            and not pokemon.is_egg
+            and ((held_item := pokemon.held_item) is None or held_item.name in items_available_for_pickup)
+            for pokemon in get_party()
+        ]
+    ):
+        return False
+
     if context.config.cheats.faster_pickup:
         pokemon_with_items_to_pick_up = 0
-        items_available_for_pickup = get_items_available_for_pickup()
         for pokemon in get_party():
             if (
                 pokemon.ability.name == "Pickup"
@@ -863,6 +800,7 @@ def should_check_for_pickup():
         return get_game_stat(GameStat.TOTAL_BATTLES) % context.config.battle.pickup_check_frequency == 0
 
 
+@debug.track
 def use_field_move(move_name: str):
     assert_has_pokemon_with_any_move([move_name], f"No Pokémon with move {move_name} in party.")
     move_name_upper = move_name.upper()
