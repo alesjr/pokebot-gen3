@@ -124,19 +124,51 @@ python pokebot.py Sapphire -m "Living Dex RSE"
 
 ## Docker
 
-Headless, dashboard na porta `8888`:
+Docker é o caminho padrão de execução. Somente dois diretórios do host são
+montados:
+
+- `roms/`, somente leitura dentro do container;
+- `profiles/`, leitura e escrita.
+
+Configurações, saves, states, screenshots, estatísticas, `.pk3`, progresso e
+âncoras RTC ficam dentro de `profiles/`. Não existem volumes paralelos para
+esses dados.
+
+Antes da execução headless, crie ou importe o perfil pela GUI. O nome informado
+em `POKEBOT_PROFILE` deve corresponder ao diretório em `profiles/`.
+
+Headless, modo Living Dex e dashboard na porta `8888`:
 
 ```bash
 POKEBOT_PROFILE=Sapphire docker compose up --build pokebot
 ```
 
-GUI via X11, dashboard publicado na porta `8889`:
+Modo e porta podem ser alterados:
 
 ```bash
-POKEBOT_PROFILE=Sapphire docker compose up --build pokebot-gui
+POKEBOT_PROFILE=Emerald \
+POKEBOT_MODE="Living Dex RSE" \
+POKEBOT_DASHBOARD_PORT=8888 \
+docker compose up --build pokebot
 ```
 
-Volumes locais preservam ROMs, perfis, saves, screenshots, estatísticas e logs.
+GUI opcional via X11, dashboard publicado na porta `8889`:
+
+```bash
+xhost +local:docker
+POKEBOT_PROFILE=Sapphire docker compose --profile gui up --build pokebot-gui
+```
+
+Não execute `pokebot` e `pokebot-gui` simultaneamente com o mesmo perfil. Ambos
+escreveriam no mesmo save. O serviço GUI usa profile opcional do Compose para
+não iniciar junto com `docker compose up`.
+
+Estado dos containers:
+
+```bash
+docker compose ps
+curl -fsS http://localhost:8888/dashboard/state
+```
 
 ## Configuração
 

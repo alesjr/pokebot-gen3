@@ -1,49 +1,63 @@
-services:
-  pokebot:
-    build: .
-    container_name: pokebot-gen3
-    stdin_open: true
-    tty: true
-    volumes:
-      - ./roms:/app/roms
-      - ./profiles:/app/profiles
-      - ./saves:/app/saves
-      - ./screenshots:/app/screenshots
-      - ./stats:/app/stats
-      - ./logs:/app/logs
-      - ./config:/app/config
-      - ./plugins:/app/plugins
-    ports:
-      - "8888:8888"
-    environment:
-      - PYTHONUNBUFFERED=1
-      - POKEBOT_PROFILE=${POKEBOT_PROFILE:-Sapphire}
-    command: >
-      sh -lc "python pokebot.py ${POKEBOT_PROFILE:-Sapphire} -hl -nv -na"
-    restart: unless-stopped
+x-pokebot-common: &pokebot-common
+  build:
+    context: .
+  init: true
+  stdin_open: true
+  tty: true
+  restart: unless-stopped
+  stop_grace_period: 30s
+  volumes:
+    # All save states, screenshots, stats, RTC anchors, and configuration live
+    # below the profile directory. Never mount those paths separately.
+    - ./roms:/app/roms:ro
+    - ./profiles:/app/profiles
+  environment:
+    PYTHONUNBUFFERED: "1"
+  healthcheck:
+    test: ["CMD", "curl", "-fsS", "http://localhost:8888/dashboard/state"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 30s
 
-  pokebot-gui:
-    build: .
-    container_name: pokebot-gen3-gui
-    stdin_open: true
-    tty: true
-    volumes:
-      - ./roms:/app/roms
-      - ./profiles:/app/profiles
-      - ./saves:/app/saves
-      - ./screenshots:/app/screenshots
-      - ./stats:/app/stats
-      - ./logs:/app/logs
-      - ./config:/app/config
-      - ./plugins:/app/plugins
-      - /tmp/.X11-unix:/tmp/.X11-unix
+services:
+  # Default service. `docker compose up` starts only this container, preventing
+  # concurrent access to the same profile/save by the optional GUI service.
+  pokebot:
+    <<: *pokebot-common
+    container_name: pokebot-gen3
     ports:
-      - "8889:8888"
+      - "${POKEBOT_DASHBOARD_PORT:-8888}:8888"
+    command:
+      - python
+      - pokebot.py
+      - ${POKEBOT_PROFILE:-Sapphire}
+      - --bot-mode
+      - ${POKEBOT_MODE:-Living Dex RSE}
+      - --headless
+      - --no-video
+      - --no-audio
+
+  # Opt-in because it shares writable profiles with the headless service.
+  # Start with: docker compose --profile gui up pokebot-gui
+  pokebot-gui:
+    <<: *pokebot-common
+    profiles: ["gui"]
+    container_name: pokebot-gen3-gui
+    ports:
+      - "${POKEBOT_GUI_DASHBOARD_PORT:-8889}:8888"
     environment:
-      - PYTHONUNBUFFERED=1
-      - DISPLAY=${DISPLAY}
-      - QT_X11_NO_MITSHM=1
-      - POKEBOT_PROFILE=${POKEBOT_PROFILE:-Sapphire}
-    command: >
-      sh -lc "python pokebot.py ${POKEBOT_PROFILE:-Sapphire} -na"
-    restart: unless-stopped
+      PYTHONUNBUFFERED: "1"
+      DISPLAY: ${DISPLAY:?DISPLAY must be set for the GUI container}
+      QT_X11_NO_MITSHM: "1"
+    volumes:
+      - ./roms:/app/roms:ro
+      - ./profiles:/app/profiles
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    command:
+      - python
+      - pokebot.py
+      - ${POKEBOT_PROFILE:-Sapphire}
+      - --bot-mode
+      - ${POKEBOT_MODE:-Living Dex RSE}
+      - --no-audio
