@@ -7,7 +7,7 @@ import pathlib
 import platform
 from dataclasses import dataclass
 
-from modules.runtime import is_bundled_app, get_base_path
+from modules.runtime import is_bundled_app
 from modules.version import pokebot_name, pokebot_version
 
 OS_NAME = platform.system()
@@ -123,7 +123,6 @@ if __name__ == "__main__":
     from modules.modes import get_bot_mode_names
     from modules.plugins import load_plugins
     from modules.profiles import Profile, profile_directory_exists, load_profile_by_name
-    from updater import run_updater
 
     register_exception_hook()
     load_plugins()
@@ -142,9 +141,6 @@ if __name__ == "__main__":
 
     startup_settings = parse_arguments(get_bot_mode_names())
     console.print(f"Starting [bold cyan]{pokebot_name} {pokebot_version}![/]")
-
-    if not is_bundled_app() and not (get_base_path() / ".git").is_dir():
-        run_updater()
 
     if startup_settings.headless:
         from modules.gui.headless import PokebotHeadless

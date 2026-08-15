@@ -63,9 +63,6 @@ path.write_text(get_requirements_hash())"
 
 RUN mkdir -p /app/roms /app/profiles
 
-# Evita prompt interativo do updater em ambiente de container.
-RUN mkdir -p /app/.git
-
 EXPOSE 8888
 
 CMD ["python", "pokebot.py", "Sapphire", "--bot-mode", "Living Dex RSE", "--headless", "--no-video", "--no-audio"]
