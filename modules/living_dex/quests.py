@@ -40,6 +40,17 @@ def read_quest_status(get_flag) -> list[dict]:
     return result
 
 
+def next_quest(get_flag) -> Quest | None:
+    """Return first incomplete story milestone in canonical order."""
+    for quest in QUESTS:
+        try:
+            if not (quest.flag and get_flag(quest.flag)):
+                return quest
+        except (KeyError, RuntimeError):
+            return quest
+    return None
+
+
 def quest_snapshot() -> list[dict]:
     from modules.memory import get_event_flag
 

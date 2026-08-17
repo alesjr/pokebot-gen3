@@ -1,9 +1,11 @@
 from dataclasses import dataclass
-from typing import Generator, Optional
+from typing import Callable, Generator, Optional
 
+from modules.battle_state import BattleOutcome
 from modules.context import context
 from modules.encounter import handle_encounter, log_encounter, EncounterInfo
 from modules.map_data import MapFRLG, MapRSE
+from modules.living_dex.observability import record_event
 from modules.player import get_player_avatar
 from modules.save_data import get_save_data
 from ._asserts import (
@@ -29,11 +31,12 @@ class Encounter:
     coordinates: tuple[int, int]
     name: str
     condition: Optional[callable] = None
+    shiny_only: bool = True
 
 
-def _get_targeted_encounter() -> Encounter | None:
+def get_static_encounters() -> list[Encounter]:
     if context.rom.is_frlg:
-        encounters = [
+        return [
             Encounter(MapFRLG.ROUTE12, (14, 70), "Snorlax"),
             Encounter(MapFRLG.ROUTE16, (31, 13), "Snorlax"),
             Encounter(MapFRLG.SEAFOAM_ISLANDS_B4F, (9, 2), "Articuno"),
@@ -47,10 +50,11 @@ def _get_targeted_encounter() -> Encounter | None:
                 (4, 8),
                 "Hypno",
                 lambda: not get_save_data().get_event_flag("RESCUED_LOSTELLE"),
+                False,
             ),
         ]
     elif context.rom.is_emerald:
-        encounters = [
+        return [
             Encounter(MapRSE.NAVEL_ROCK_BOTTOM, (11, 13), "Lugia"),
             Encounter(MapRSE.SKY_PILLAR_TOP, (14, 6), "Rayquaza"),
             Encounter(MapRSE.BIRTH_ISLAND_EXTERIOR, (15, 10), "Deoxys"),
@@ -59,7 +63,7 @@ def _get_targeted_encounter() -> Encounter | None:
             Encounter(MapRSE.ANCIENT_TOMB, (8, 7), "Registeel"),
         ]
     else:
-        encounters = [
+        return [
             Encounter(MapRSE.SKY_PILLAR_TOP, (14, 6), "Rayquaza"),
             Encounter(MapRSE.DESERT_RUINS, (8, 7), "Regirock"),
             Encounter(MapRSE.ISLAND_CAVE, (8, 7), "Regice"),
@@ -72,10 +76,13 @@ def _get_targeted_encounter() -> Encounter | None:
                 lambda: not get_save_data().get_event_flag(
                     "HIDE_ROUTE_119_KECLEON_1" if context.rom.is_emerald else "HIDE_KECLEON_ROUTE119_1"
                 ),
+                False,
             ),
             Encounter(MapRSE.SOUTHERN_ISLAND_INTERIOR, (13, 11), "Latios/Latias"),
         ]
 
+
+def get_targeted_encounter() -> Encounter | None:
     targeted_tile = get_player_avatar().map_location_in_front
     if targeted_tile is None:
         return None
@@ -83,9 +90,22 @@ def _get_targeted_encounter() -> Encounter | None:
     return next(
         (
             entry
-            for entry in encounters
+            for entry in get_static_encounters()
             if entry.map == (targeted_tile.map_group, targeted_tile.map_number)
             and entry.coordinates == targeted_tile.local_position
+        ),
+        None,
+    )
+
+
+def get_static_encounter_in_current_battle(species_name: str) -> Encounter | None:
+    """Resolve static target when profile resumes from a battle save state."""
+    avatar = get_player_avatar()
+    return next(
+        (
+            entry
+            for entry in get_static_encounters()
+            if entry.map == avatar.map_group_and_number and species_name in entry.name.split("/")
         ),
         None,
     )
@@ -98,16 +118,58 @@ class StaticSoftResetsMode(BotMode):
 
     @staticmethod
     def is_selectable() -> bool:
-        return _get_targeted_encounter() is not None
+        return get_targeted_encounter() is not None
+
+    def __init__(self):
+        super().__init__()
+        self._controller: StaticSoftResetController | None = None
 
     def on_battle_started(self, encounter: EncounterInfo | None) -> BattleAction | None:
-        if encounter.is_of_interest:
-            return handle_encounter(encounter, disable_auto_catch=True)
-        log_encounter(encounter)
-        return BattleAction.CustomAction
+        return self._controller.on_battle_started(encounter)
+
+    def on_battle_ended(self, outcome: BattleOutcome) -> None:
+        self._controller.on_battle_ended(outcome)
 
     def run(self) -> Generator:
-        encounter = _get_targeted_encounter()
+        encounter = get_targeted_encounter()
+        self._controller = StaticSoftResetController(encounter)
+        yield from self._controller.run()
+
+
+class StaticSoftResetController:
+    """Reusable static-encounter reset loop.
+
+    A caller that enables ``auto_catch`` must stop the loop on a successful catch
+    and persist the in-game save before starting another reset loop.
+    """
+
+    def __init__(
+        self,
+        encounter: Encounter,
+        *,
+        auto_catch: bool = False,
+        qualifies: Callable[[EncounterInfo], bool] | None = None,
+    ):
+        self.encounter = encounter
+        self.auto_catch = auto_catch
+        self.qualifies = qualifies or (lambda candidate: candidate.is_of_interest)
+        self.caught = False
+
+    def on_battle_started(self, encounter: EncounterInfo | None) -> BattleAction:
+        if encounter is not None and self.qualifies(encounter):
+            if self.auto_catch:
+                return BattleAction.Catch
+            return handle_encounter(encounter, disable_auto_catch=True)
+        if encounter is not None:
+            log_encounter(encounter)
+        return BattleAction.CustomAction
+
+    def on_battle_ended(self, outcome: BattleOutcome) -> None:
+        if outcome is BattleOutcome.Caught:
+            self.caught = True
+
+    def run(self, *, stop_when_caught: bool = False) -> Generator:
+        encounter = self.encounter
 
         assert_save_game_exists("There is no saved game. Cannot soft reset.")
         assert_saved_on_map(
@@ -121,9 +183,12 @@ class StaticSoftResetsMode(BotMode):
         assert_player_has_poke_balls(check_in_saved_game=True)
         assert_boxes_or_party_can_fit_pokemon(check_in_saved_game=True)
 
-        while context.bot_mode != "Manual":
+        while context.bot_mode != "Manual" and not (stop_when_caught and self.caught):
             yield from soft_reset(mash_random_keys=True)
-            yield from wait_for_unique_rng_value()
+            rng_is_unique = yield from wait_for_unique_rng_value(max_frames=300)
+            if not rng_is_unique:
+                record_event("rng_collision", "RNG repetido; iniciando novo reset")
+                continue
 
             if encounter.name == "Groudon/Kyogre":
                 yield from wait_for_task_to_start_and_finish("Task_MapNamePopup")

@@ -5,6 +5,7 @@ from modules.context import context
 from modules.debug import debug
 from modules.files import get_rng_state_history, save_rng_state_history
 from modules.memory import GameState, get_game_state, pack_uint32, read_symbol, unpack_uint32, write_symbol
+from modules.living_dex.observability import record_event
 from .tasks_scripts import wait_for_task_to_start_and_finish
 from .walking import wait_for_player_avatar_to_be_controllable
 
@@ -18,6 +19,7 @@ def soft_reset(mash_random_keys: bool = True) -> Generator:
                              will advance the RNG value and so result in unique RNG values
                              faster (on FRLG.)
     """
+    record_event("reset", "Soft reset iniciado", frame=context.emulator.get_frame_count())
     context.emulator.reset()
     yield
 
@@ -46,7 +48,7 @@ def soft_reset(mash_random_keys: bool = True) -> Generator:
 
 
 @debug.track
-def wait_for_unique_rng_value() -> Generator:
+def wait_for_unique_rng_value(max_frames: int | None = None) -> Generator:
     """
     Wait until the RNG value is unique. This is faster if the `random_soft_reset_rng`
     is enabled.
@@ -55,14 +57,20 @@ def wait_for_unique_rng_value() -> Generator:
     rng_value = unpack_uint32(read_symbol("gRngValue"))
 
     context.message = "Waiting for a unique frame before continuing..."
+    frames_waited = 0
     while rng_value in rng_history:
+        if max_frames is not None and frames_waited >= max_frames:
+            context.message = ""
+            return False
         if context.config.cheats.random_soft_reset_rng:
             rng_value = (1103515245 * rng_value + 24691) & 0xFFFF_FFFF
             write_symbol("gRngValue", pack_uint32(rng_value))
         else:
             rng_value = unpack_uint32(read_symbol("gRngValue"))
+            frames_waited += 1
             yield
     context.message = ""
 
     rng_history.add(rng_value)
     save_rng_state_history(rng_history)
+    return True

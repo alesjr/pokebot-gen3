@@ -8,10 +8,17 @@ from modules.encounter import EncounterInfo
 from modules.items import get_item_bag
 from modules.living_dex.collection import CollectionSnapshot, is_founder_candidate, is_qualified
 from modules.living_dex.progress import LivingDexProgress
-from modules.memory import GameState, get_game_state
+from modules.living_dex.observability import record_event
+from modules.living_dex.quests import next_quest
+from modules.memory import GameState, get_event_flag, get_game_state
 from modules.map_data import MapRSE
 from modules.modes._interface import BattleAction, BotMode, BotModeError
-from modules.modes.util import ensure_facing_direction, navigate_to
+from modules.modes.static_soft_resets import (
+    StaticSoftResetController,
+    get_static_encounter_in_current_battle,
+    get_targeted_encounter,
+)
+from modules.modes.util import ensure_facing_direction, navigate_to, save_the_game
 from modules.modes.util.pc_interaction import PCAction, interact_with_pc
 from modules.pokemon_party import get_party
 from modules.pokemon_storage import get_pokemon_storage
@@ -30,8 +37,26 @@ class LivingDexMode(BotMode):
         super().__init__()
         self.progress = LivingDexProgress.load(context.profile.path)
         self._pending_founder: tuple[int, str] | None = None
+        self._static_reset: StaticSoftResetController | None = None
 
     def on_battle_started(self, encounter: EncounterInfo | None) -> BattleAction | None:
+        if self._static_reset is None and encounter is not None:
+            static_encounter = get_static_encounter_in_current_battle(encounter.pokemon.species.name)
+            quest_key = None if static_encounter is None else f"static:{static_encounter.name}"
+            if static_encounter is not None and quest_key not in self.progress.completed_quests:
+                self._start_static_hunt(static_encounter)
+        if self._static_reset is not None:
+            action = self._static_reset.on_battle_started(encounter)
+            if encounter is not None:
+                pokemon = encounter.pokemon
+                record_event(
+                    "encounter",
+                    f"{pokemon.species.name} encontrado: {action.name}",
+                    shiny=pokemon.is_shiny,
+                    iv_sum=pokemon.ivs.sum(),
+                    personality=f"{pokemon.personality_value:08X}",
+                )
+            return action
         if encounter is None:
             return BattleAction.Fight
 
@@ -51,7 +76,48 @@ class LivingDexMode(BotMode):
 
         return BattleAction.RunAway
 
+    def _start_static_hunt(self, targeted_encounter) -> None:
+        self.progress.current_objective = f"Static hunt active: {targeted_encounter.name}"
+        self.progress.save(context.profile.path)
+        record_event("hunt", f"Caça estática iniciada: {targeted_encounter.name}")
+        self._static_reset = StaticSoftResetController(
+            targeted_encounter,
+            auto_catch=True,
+            qualifies=(
+                (lambda candidate: candidate.pokemon.is_shiny)
+                if targeted_encounter.shiny_only
+                else (lambda candidate: is_qualified(candidate.pokemon))
+            ),
+        )
+
+    def _run_static_hunt(self) -> Generator:
+        targeted_encounter = self._static_reset.encounter
+        quest_key = f"static:{targeted_encounter.name}"
+        yield from self._static_reset.run(stop_when_caught=True)
+
+        if self._static_reset.caught:
+            # Mandatory durability barrier. Never allow another reset before
+            # the caught Pokémon has reached the cartridge save file.
+            self.progress.current_objective = f"Saving caught {targeted_encounter.name}"
+            context.message = self.progress.current_objective
+            record_event("save", f"Salvando captura: {targeted_encounter.name}")
+            yield from save_the_game()
+            self.progress.completed_quests.append(quest_key)
+            story_quest = next_quest(get_event_flag)
+            self.progress.current_objective = (
+                f"Next story quest: {story_quest.name}"
+                if story_quest is not None
+                else "Main story milestones complete"
+            )
+            self.progress.save(context.profile.path)
+            record_event("quest", self.progress.current_objective)
+        self._static_reset = None
+
     def on_battle_ended(self, outcome: BattleOutcome) -> None:
+        if self._static_reset is not None:
+            self._static_reset.on_battle_ended(outcome)
+            record_event("battle", f"Batalha encerrada: {outcome.name}")
+            return
         if self._pending_founder is None:
             return
         personality, species = self._pending_founder
@@ -93,13 +159,23 @@ class LivingDexMode(BotMode):
             raise BotModeError("Disable random_soft_reset_rng: it writes directly to game RNG memory.")
 
         while context.bot_mode == self.name():
+            if self._static_reset is not None:
+                yield from self._run_static_hunt()
+                continue
             if get_game_state() == GameState.OVERWORLD:
+                targeted_encounter = get_targeted_encounter()
+                quest_key = None if targeted_encounter is None else f"static:{targeted_encounter.name}"
+                if targeted_encounter is not None and quest_key not in self.progress.completed_quests:
+                    self._start_static_hunt(targeted_encounter)
+                    continue
                 if self.progress.founder_personality_value is not None and not self.progress.starter_stored:
                     yield from self._store_shiny_starter()
                 storage = CollectionSnapshot.from_storage(get_pokemon_storage())
                 founder = self.progress.founder_species or "pending"
+                story_quest = next_quest(get_event_flag)
+                story_objective = story_quest.name if story_quest is not None else "story complete"
                 self.progress.current_objective = (
-                    f"Area collection active | qualified {len(storage.collected)} | "
+                    f"Next quest: {story_objective} | qualified {len(storage.collected)} | "
                     f"free slots {storage.free_slots} | founder {founder}"
                 )
                 context.message = self.progress.current_objective
