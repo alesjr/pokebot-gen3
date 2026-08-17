@@ -6,6 +6,7 @@ from typing import Generator
 from modules.console import console
 from modules.context import context
 from modules.memory import get_game_state
+from modules.living_dex.observability import record_event
 from modules.modes import BotMode, BotModeError, FrameInfo, get_bot_listeners, get_bot_mode_by_name
 from modules.plugins import plugin_profile_loaded, load_built_in_plugins
 from modules.state_cache import state_cache
@@ -119,13 +120,16 @@ def main_loop() -> None:
             except (StopIteration, GeneratorExit):
                 context.controller_stack.pop()
             except BotModeError as e:
+                record_event("error", f"Erro do modo: {e}")
                 context.emulator.reset_held_buttons()
                 context.message = str(e)
                 context.set_manual_mode()
             except TimeoutError:
+                record_event("error", "Timeout fatal no loop principal")
                 console.print_exception()
                 sys.exit(1)
             except Exception as e:
+                record_event("error", f"Erro interno: {e}")
                 console.print_exception()
                 context.emulator.reset_held_buttons()
                 context.message = f"Internal Bot Error: {str(e)}"

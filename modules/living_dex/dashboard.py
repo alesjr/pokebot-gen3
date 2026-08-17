@@ -6,6 +6,7 @@ from queue import Queue
 from modules.clock import get_clock_time
 from modules.context import context
 from modules.living_dex.collection import CollectionSnapshot
+from modules.living_dex.observability import runtime_events
 from modules.living_dex.progress import LivingDexProgress
 from modules.living_dex.quests import quest_snapshot
 from modules.main import work_queue
@@ -40,6 +41,24 @@ def _build_snapshot() -> dict:
         })
     clock = get_clock_time()
     party = get_party()
+    runtime = runtime_events()
+    speed = context.emulation_speed
+    runtime.update(
+        {
+            "status": "running",
+            "bot_mode": context.bot_mode,
+            "headless": not context.video,
+            "video": context.video,
+            "audio": context.audio,
+            "speed": speed,
+            "speed_label": "máxima" if speed == 0 else f"{speed:g}×",
+            "host_frame": context.frame,
+            "emulator_frame": context.emulator.get_frame_count(),
+            "controller": (
+                context.controller_stack[-1].__qualname__ if len(context.controller_stack) > 0 else None
+            ),
+        }
+    )
     return {
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "game": context.rom.game_name,
@@ -51,6 +70,7 @@ def _build_snapshot() -> dict:
             "rom": str(context.rom.file.resolve()),
         },
         "rtc": {"days": clock.days, "hours": clock.hours, "minutes": clock.minutes, "seconds": clock.seconds},
+        "runtime": runtime,
         "progress": {
             "objective": progress.current_objective,
             "founder": progress.founder_species,
@@ -79,5 +99,5 @@ def snapshot_via_main_thread(timeout: float = 3.0) -> dict:
     try:
         ok, value = result.get(timeout=timeout)
     except Exception:
-        return {"error": "emulator did not answer", "pokedex": [], "quests": []}
-    return value if ok else {"error": value, "pokedex": [], "quests": []}
+        return {"error": "emulator did not answer", "runtime": runtime_events(), "pokedex": [], "quests": []}
+    return value if ok else {"error": value, "runtime": runtime_events(), "pokedex": [], "quests": []}
