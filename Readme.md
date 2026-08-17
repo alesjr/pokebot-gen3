@@ -23,6 +23,9 @@ Implementado:
 
 - modo `Living Dex RSE` disponível em Ruby, Sapphire e Emerald;
 - captura direta de shiny e Pokémon 6×31 IV;
+- delegação automática para soft reset diante de encontros estáticos suportados;
+- lendários estáticos aceitos somente quando shiny, com save obrigatório apó captura;
+- seleção do próximo marco da história pelas event flags do jogo;
 - seleção e proteção lógica do founder somente após captura confirmada;
 - depósito automático do inicial shiny no PC de Oldale após obter founder;
 - progresso persistente por perfil em `living_dex_progress.json`;
@@ -95,6 +98,8 @@ doméstica confiável. Ele não oferece controles do emulador. Exibe:
 - quests e objetivo atual;
 - time, boxes, founder e inicial depositado;
 - RTC, TID, SID e caminhos absolutos do perfil, ROM e save.
+- estado da instância, modo, headless/GUI, velocidade, frames e contadores;
+- feed operacional dos últimos 100 resets, encontros, batalhas, saves, quests e erros.
 
 Não exponha a porta diretamente à internet.
 
@@ -144,9 +149,9 @@ O script `pokebot-docker.sh` controla imagem, emulador e dashboard:
 ```bash
 ./pokebot-docker.sh gui Sapphire
 ./pokebot-docker.sh headless Emerald
-./pokebot-docker.sh status
-./pokebot-docker.sh logs
-./pokebot-docker.sh stop
+./pokebot-docker.sh status Sapphire
+./pokebot-docker.sh logs Ruby
+./pokebot-docker.sh stop Emerald
 ```
 
 Sem argumentos, inicia GUI usando perfil `Sapphire`:
@@ -155,9 +160,31 @@ Sem argumentos, inicia GUI usando perfil `Sapphire`:
 ./pokebot-docker.sh
 ```
 
-No modo `gui`, dashboard fica em `http://localhost:8889/`. No modo `headless`,
-fica em `http://localhost:8888/`. O script para serviço oposto antes de iniciar,
-impedindo dois containers de escreverem no mesmo save.
+Cada perfil usa projeto Compose isolado. Portas padrão: Sapphire `8888`, Ruby
+`8889` e Emerald `8890`. O script para serviço oposto somente dentro do mesmo
+perfil, impedindo dois containers de escreverem no mesmo save sem afetar outros jogos.
+
+Execução simultânea:
+
+```bash
+sh pokebot-docker.sh headless Sapphire
+sh pokebot-docker.sh headless Ruby
+sh pokebot-docker.sh headless Emerald
+```
+
+Porta customizada pode ser informada como terceiro argumento:
+
+```bash
+sh pokebot-docker.sh headless Ruby 9001
+```
+
+Headless usa velocidade máxima (`0`, sem throttle) por padrão. Quarto argumento
+define multiplicador; `0` mantém máximo possível:
+
+```bash
+sh pokebot-docker.sh headless Sapphire 8888 0
+sh pokebot-docker.sh gui Sapphire 8888 16
+```
 
 Headless, modo Living Dex e dashboard na porta `8888`:
 
@@ -181,14 +208,13 @@ xhost +local:docker
 POKEBOT_PROFILE=Sapphire docker compose --profile gui up --build pokebot-gui
 ```
 
-Não execute `pokebot` e `pokebot-gui` simultaneamente com o mesmo perfil. Ambos
-escreveriam no mesmo save. O serviço GUI usa profile opcional do Compose para
-não iniciar junto com `docker compose up`.
+Não execute `pokebot` e `pokebot-gui` simultaneamente com mesmo perfil. Script
+impede isso quando usado como entrada. Serviço GUI usa profile opcional do Compose.
 
 Estado dos containers:
 
 ```bash
-docker compose ps
+sh pokebot-docker.sh status Sapphire
 curl -fsS http://localhost:8888/dashboard/state
 ```
 
