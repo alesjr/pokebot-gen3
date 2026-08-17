@@ -1,4 +1,5 @@
 x-pokebot-common: &pokebot-common
+  image: pokebot-gen3:local
   build:
     context: .
   init: true
@@ -25,7 +26,6 @@ services:
   # concurrent access to the same profile/save by the optional GUI service.
   pokebot:
     <<: *pokebot-common
-    container_name: pokebot-gen3
     ports:
       - "${POKEBOT_DASHBOARD_PORT:-8888}:8888"
     command:
@@ -35,6 +35,8 @@ services:
       - --bot-mode
       - ${POKEBOT_MODE:-Living Dex RSE}
       - --headless
+      - --emulation-speed
+      - ${POKEBOT_EMULATION_SPEED:-0}
       - --no-video
       - --no-audio
 
@@ -43,9 +45,8 @@ services:
   pokebot-gui:
     <<: *pokebot-common
     profiles: ["gui"]
-    container_name: pokebot-gen3-gui
     ports:
-      - "${POKEBOT_GUI_DASHBOARD_PORT:-8889}:8888"
+      - "${POKEBOT_DASHBOARD_PORT:-8888}:8888"
     environment:
       PYTHONUNBUFFERED: "1"
       # Script validates DISPLAY before starting GUI. Fallback keeps headless
@@ -62,4 +63,6 @@ services:
       - ${POKEBOT_PROFILE:-Sapphire}
       - --bot-mode
       - ${POKEBOT_MODE:-Living Dex RSE}
+      - --emulation-speed
+      - ${POKEBOT_EMULATION_SPEED:-1}
       - --no-audio
