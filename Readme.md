@@ -44,6 +44,10 @@ Ainda pendente:
 - execução de distribuições oficiais por segundo core e link emulado;
 - transferência real para Geração IV/Pal Park.
 
+O projeto futuro para executar os cinco jogos GBA simultaneamente, transmitir
+as telas pelo dashboard e construir uma National Living Dex conjunta está em
+[Frota Living Dex Gen III](docs/FLEET_LIVING_DEX_GEN3.md).
+
 O modo atual não deve ser descrito como bot capaz de finalizar a campanha sem
 supervisão. Ele implementa políticas de coleção, founder, depósito, RTC e
 observabilidade sobre as primitivas existentes do PokéBot.
