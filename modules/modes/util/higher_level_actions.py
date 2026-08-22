@@ -3,7 +3,7 @@ from typing import Generator, Union, Callable
 
 from modules.context import context
 from modules.debug import debug
-from modules.map_data import PokemonCenter
+from modules.map_data import PokemonCenter, get_map_enum
 from modules.memory import get_event_flag, get_game_state_symbol, unpack_uint32, read_symbol, get_game_state, GameState
 from modules.menu_parsers import CursorOptionEmerald, CursorOptionFRLG, CursorOptionRS
 from modules.menuing import PokemonPartyMenuNavigator, StartMenuNavigator, is_fade_active
@@ -18,7 +18,7 @@ from modules.player import (
 )
 from modules.pokemon_party import get_party
 from modules.region_map import FlyDestinationFRLG, FlyDestinationRSE, get_map_cursor, get_map_region
-from modules.tasks import get_task, task_is_active
+from modules.tasks import get_global_script_context, get_task, task_is_active
 from ._util_helper import isolate_inputs
 from .items import scroll_to_item_in_bag, use_item_from_bag
 from .tasks_scripts import (
@@ -26,7 +26,6 @@ from .tasks_scripts import (
     wait_for_yes_no_question,
     wait_until_script_is_active,
     wait_for_script_to_start_and_finish,
-    wait_for_no_script_to_run,
     wait_until_task_is_active,
     wait_for_fade_to_finish,
 )
@@ -170,6 +169,20 @@ def spin(stop_condition: Callable[[], bool] | None = None, counter_clockwise: bo
 
 @debug.track
 def heal_in_pokemon_center(pokemon_center_door_location: PokemonCenter) -> Generator:
+    if context.rom.is_rse and get_map_enum(get_player_avatar().map_group_and_number).name.endswith(
+        "POKEMON_CENTER_1F"
+    ):
+        source_map = get_map_enum(get_player_avatar().map_group_and_number)
+        yield from navigate_to(source_map, (7, 8))
+        for _ in range(4_000):
+            if get_map_enum(get_player_avatar().map_group_and_number) is not source_map:
+                yield from wait_for_player_avatar_to_be_controllable("B")
+                break
+            context.emulator.press_button("Down")
+            yield
+        else:
+            raise BotModeError("Could not leave the current RSE Pokémon Center before healing elsewhere.")
+
     # Walk to and enter the Pokémon centre
     yield from navigate_to(pokemon_center_door_location.value[0], pokemon_center_door_location.value[1])
 
@@ -186,7 +199,17 @@ def heal_in_pokemon_center(pokemon_center_door_location: PokemonCenter) -> Gener
         yield
         context.emulator.press_button("A")
         yield from wait_for_yes_no_question("Yes")
-        yield from wait_for_no_script_to_run("B")
+        for frame in range(20_000):
+            if not get_global_script_context().is_active:
+                break
+            context.emulator.press_button("A" if frame % 2 == 0 else "B")
+            yield
+        else:
+            script = get_global_script_context()
+            raise BotModeError(
+                "Pokémon Center healing dialogue did not finish: "
+                f"script={script.script_function_name}."
+            )
         yield from wait_for_player_avatar_to_be_standing_still("B")
 
         # Get out

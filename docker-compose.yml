@@ -14,6 +14,12 @@ x-pokebot-common: &pokebot-common
     - ./profiles:/app/profiles
   environment:
     PYTHONUNBUFFERED: "1"
+    POKEBOT_FLEET_TOKEN: ${POKEBOT_FLEET_TOKEN:-}
+    POKEBOT_FLEET_URL: http://fleet-coordinator:8877
+  networks:
+    fleet-private:
+      aliases:
+        - ${POKEBOT_PROFILE_SLUG:-pokebot}
   healthcheck:
     test: ["CMD", "curl", "-fsS", "http://localhost:8888/dashboard/state"]
     interval: 30s
@@ -33,7 +39,7 @@ services:
       - pokebot.py
       - ${POKEBOT_PROFILE:-Sapphire}
       - --bot-mode
-      - ${POKEBOT_MODE:-Living Dex RSE}
+      - ${POKEBOT_MODE:-Living Dex Gen III}
       - --headless
       - --emulation-speed
       - ${POKEBOT_EMULATION_SPEED:-0}
@@ -62,7 +68,12 @@ services:
       - pokebot.py
       - ${POKEBOT_PROFILE:-Sapphire}
       - --bot-mode
-      - ${POKEBOT_MODE:-Living Dex RSE}
+      - ${POKEBOT_MODE:-Living Dex Gen III}
       - --emulation-speed
       - ${POKEBOT_EMULATION_SPEED:-1}
       - --no-audio
+
+networks:
+  fleet-private:
+    name: pokebot-fleet
+    external: true

@@ -127,6 +127,10 @@ compartilhado. Responsabilidades:
 - agregar estado para dashboard central;
 - reconciliar party e boxes depois de todo reinício.
 
+Antes do coordenador global existir, cada perfil reutiliza seu `stats.db` para
+persistir o catálogo importado das docs, relação missão/flag e último valor
+observado de cada flag. A migração deve preservar tabelas de encontros.
+
 Somente uma instância pode possuir lease de escrita de um perfil. Bot normal,
 trade worker e distribution worker nunca acessam o mesmo save simultaneamente.
 
@@ -185,6 +189,12 @@ Criar matriz de obtenção por versão, mapa e método. O planejador deve:
 - tratar Safari, Feebas, gifts, roamers e encontros estáticos;
 - usar breeding quando melhor ou obrigatório;
 - salvar imediatamente depois de toda captura única.
+
+Entre duas missões, cada rota intermediária funciona como barreira de hunting.
+O bot enfrenta encontros para ganhar experiência e capturar alvos shiny da
+rota. Ele somente segue para a próxima missão quando não restar alvo shiny
+planejado e a equipe utilizável atingir o nível mínimo definido para o próximo
+chefe ou desafio. Atingir o nível antes dos shinies não encerra a caça.
 
 Lendários e outros encontros únicos somente contam quando shiny. Depois da
 captura, save dentro do jogo deve terminar antes de qualquer novo reset.

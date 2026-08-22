@@ -1,5 +1,6 @@
 import queue
 import sys
+import time
 from collections import deque
 from typing import Generator
 
@@ -58,9 +59,22 @@ def main_loop() -> None:
 
         context.stats = StatsDatabase(context.profile)
 
+        mission_tracker = None
+        if context.rom.is_rse or context.rom.is_frlg:
+            from modules.living_dex.missions import MissionTracker
+
+            mission_tracker = MissionTracker(context.rom, context.stats)
+            mission_tracker.install_catalog()
+        context.mission_tracker = mission_tracker
+
         if context.config.dashboard.enable:
+            from modules.living_dex.video import MjpegFrameStream
             from modules.web.http import start_http_server
 
+            context.video_stream = MjpegFrameStream(
+                fps=context.config.dashboard.video_fps,
+                jpeg_quality=context.config.dashboard.video_jpeg_quality,
+            )
             start_http_server(
                 host=context.config.dashboard.host,
                 port=context.config.dashboard.port,
@@ -68,8 +82,35 @@ def main_loop() -> None:
 
         context.bot_listeners = get_bot_listeners(context.rom)
         previous_frame_info: FrameInfo | None = None
+        next_fleet_reconciliation = 0.0
 
         while True:
+            if context.fleet_client is not None:
+                context.fleet_client.heartbeat_if_due(
+                    status="running",
+                    objective=context.message or None,
+                    emulator_frame=context.emulator.get_frame_count(),
+                )
+                now = time.monotonic()
+                if now >= next_fleet_reconciliation:
+                    from modules.living_dex.reconcile import profile_specimens
+                    from modules.memory import game_has_started
+                    from modules.pokemon_party import get_party
+                    from modules.pokemon_storage import get_pokemon_storage
+
+                    if game_has_started():
+                        context.fleet_client.reconcile_specimens(
+                            profile_specimens(
+                                get_party(),
+                                get_pokemon_storage(),
+                                context.profile.path.name,
+                                context.rom,
+                            )
+                        )
+                        next_fleet_reconciliation = now + 30
+            if mission_tracker is not None:
+                mission_tracker.observe_if_due()
+
             # Process work queue, which can be used to get the main thread to access the emulator
             # at a 'safe' time (i.e. not in the middle of emulating a frame.)
             while not work_queue.empty():
@@ -141,7 +182,20 @@ def main_loop() -> None:
                     context.set_manual_mode()
 
             inputs_each_frame.append(context.emulator.get_inputs())
-            context.emulator.run_single_frame()
+            capture_prepared = (
+                context.video_stream.prepare_natural_frame(context.emulator)
+                if context.video_stream is not None
+                else False
+            )
+            try:
+                context.emulator.run_single_frame()
+            except BaseException:
+                if capture_prepared:
+                    context.video_stream.cancel_prepared_frame(context.emulator)
+                raise
+            else:
+                if capture_prepared:
+                    context.video_stream.finish_natural_frame(context.emulator)
             previous_frame_info = frame_info
             previous_frame_info.previous_frame = None
 

@@ -139,7 +139,8 @@ def run_rse_hoenn(get_active_encounter: Callable[[], EncounterInfo]) -> Generato
             context.emulator.press_button("A")
             yield
 
-        handle_encounter(get_active_encounter(), do_not_log_battle_action=True, disable_auto_catch=True)
+        encounter = get_active_encounter() or EncounterInfo.create(get_party()[0], EncounterType.Gift)
+        handle_encounter(encounter, do_not_log_battle_action=True, disable_auto_catch=True)
 
 
 def run_rse_johto(get_active_encounter: Callable[[], EncounterInfo]):

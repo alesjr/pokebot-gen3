@@ -86,6 +86,12 @@ class BotMode:
         """
         return None
 
+    def on_navigation_battle_started(
+        self, encounter: "EncounterInfo | None"
+    ) -> "BattleAction | BattleStrategy | None":
+        """Override wild encounters interrupting campaign navigation."""
+        return None
+
     def on_battle_ended(self, outcome: "BattleOutcome") -> None:
         """
         This is called when a battle is over, i.e. the final result is known.

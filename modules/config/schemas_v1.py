@@ -93,13 +93,17 @@ class Dashboard(BaseConfig):
     enable: bool = True
     host: str = "0.0.0.0"
     port: Annotated[int, Field(gt=0, lt=65536)] = 8888
+    video_fps: Annotated[int, Field(gt=0, le=60)] = 15
+    video_jpeg_quality: Annotated[int, Field(gt=0, le=95)] = 75
     expose_trainer_ids: bool = True
     expose_paths: bool = True
 
 
 class LivingDexGameplay(BaseConfig):
     progression: Literal["area"] = "area"
-    starter: Literal["Treecko", "Torchic", "Mudkip"] = "Mudkip"
+    trainer_name: str = "Alesjr"
+    trainer_gender: Literal["male", "female"] = "male"
+    starter: Literal["Treecko", "Torchic", "Mudkip", "Bulbasaur", "Charmander", "Squirtle"] = "Mudkip"
     fossil: Literal["Root Fossil", "Claw Fossil"] = "Root Fossil"
     founder_min_iv_sum: Annotated[int, Field(ge=0, le=186)] = 93
 

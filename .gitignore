@@ -21,6 +21,7 @@ stats/
 *.sav
 *.ss[0-9]
 *.db
+/mgba/_pylib.abi3.so
 
 # Local virtual environments.
 .venv/

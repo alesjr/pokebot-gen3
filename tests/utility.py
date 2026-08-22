@@ -56,10 +56,16 @@ class MockStatsDatabase:
             self.last_encounter.outcome = battle_outcome
             self.logged_encounters[-1].outcome = battle_outcome
 
+    def has_encounter_with_personality_value(self, personality_value: int) -> bool:
+        return False
+
     def log_fishing_attempt(self, attempt: "FishingAttempt"):
         self.last_fishing_attempt = attempt
 
     def log_pickup_items(self, picked_up_items: list["Item"]) -> None:
+        pass
+
+    def log_pokenav_call(self) -> None:
         pass
 
     def reset_shiny_phase(self, encounter: "Encounter"):

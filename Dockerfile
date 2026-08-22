@@ -65,4 +65,4 @@ RUN mkdir -p /app/roms /app/profiles
 
 EXPOSE 8888
 
-CMD ["python", "pokebot.py", "Sapphire", "--bot-mode", "Living Dex RSE", "--headless", "--no-video", "--no-audio"]
+CMD ["python", "pokebot.py", "Sapphire", "--bot-mode", "Living Dex Gen III", "--headless", "--no-video", "--no-audio"]

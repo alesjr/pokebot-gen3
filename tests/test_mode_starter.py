@@ -21,7 +21,7 @@ class TestStarter(BotTestCase):
             expected_species = "Squirtle"
 
         starters_mode = StartersMode()
-        self.bot_mode.set_on_battle_started(lambda e: BattleAction.CustomAction)
+        self.bot_mode.set_on_battle_started(starters_mode.on_battle_started)
 
         for _ in starters_mode.run():
             if len(self.stats.logged_encounters) > 3:
@@ -60,7 +60,7 @@ class TestStarter(BotTestCase):
         set_next_rng_seed(rng_seed)
 
         starters_mode = StartersMode()
-        self.bot_mode.set_on_battle_started(lambda e: BattleAction.CustomAction)
+        self.bot_mode.set_on_battle_started(starters_mode.on_battle_started)
         self.bot_mode.allow_ending_on_manual_mode = True
 
         for _ in starters_mode.run():

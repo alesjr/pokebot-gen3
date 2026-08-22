@@ -76,10 +76,14 @@ def get_bot_modes() -> list[Type[BotMode]]:
 def get_bot_mode_names() -> list[str]:
     result = ["Manual"]
     result.extend(mode.name() for mode in get_bot_modes())
+    if "Living Dex Gen III" in result:
+        result.append("Living Dex RSE")
     return result
 
 
 def get_bot_mode_by_name(name: str) -> Type[BotMode] | None:
+    if name == "Living Dex RSE":
+        name = "Living Dex Gen III"
     return next((mode for mode in get_bot_modes() if mode.name() == name), None)
 
 

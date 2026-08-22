@@ -1,5 +1,8 @@
 from typing import TYPE_CHECKING
 
+import atexit
+import os
+
 from modules.context import context
 from modules.game import set_rom
 from modules.libmgba import LibmgbaEmulator
@@ -21,6 +24,17 @@ class PokebotHeadless:
         context.profile = startup_settings.profile
         context.config.load(startup_settings.profile.path, strict=False)
         set_rom(startup_settings.profile.rom)
+        fleet_token = os.environ.get("POKEBOT_FLEET_TOKEN", "")
+        if fleet_token:
+            from modules.fleet.client import FleetClient
+
+            context.fleet_client = FleetClient(
+                os.environ.get("POKEBOT_FLEET_URL", "http://fleet-coordinator:8877"),
+                fleet_token,
+                startup_settings.profile.path.name,
+            )
+            context.fleet_client.acquire(owner=f"bot:{startup_settings.profile.path.name}")
+            atexit.register(context.fleet_client.release)
         context.emulator = LibmgbaEmulator(startup_settings.profile, self._on_frame)
         context.audio = not startup_settings.no_audio
         context.video = not startup_settings.no_video

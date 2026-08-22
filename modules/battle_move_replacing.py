@@ -12,6 +12,7 @@ from modules.menu_parsers import get_party_menu_cursor_pos
 from modules.pokemon import get_move_by_index
 from modules.pokemon_party import get_party, get_party_size
 from modules.tasks import task_is_active, get_task, Task
+from modules.text_printer import TextPrinterState, get_text_printer
 
 
 class LearnMoveState(Enum):
@@ -76,6 +77,7 @@ def get_learn_move_state() -> LearnMoveState:
 def handle_move_replacement_dialogue(strategy: BattleStrategy) -> Generator:
     move_to_forget = 4
     already_confirmed = False
+    unknown_frames = 0
     while True:
         evolution_task = get_task("Task_EvolutionScene")
         if evolution_task is not None and evolution_task.data_value(0) != get_move_learning_state_index():
@@ -104,7 +106,10 @@ def handle_move_replacement_dialogue(strategy: BattleStrategy) -> Generator:
                     party_index = read_symbol("gBattleStruct", 16, 1)[0]
                 if context.rom.is_emerald or context.rom.is_frlg:
                     party_index = get_battle_state().map_battle_party_index(party_index)
-            pokemon = get_party()[party_index]
+            party = get_party()
+            if party_index >= len(party) and len(party) == 1:
+                party_index = 0
+            pokemon = party[party_index]
             decision = strategy.which_move_should_be_replaced(pokemon, move_to_learn)
 
             if context.bot_mode == "Manual":
@@ -115,9 +120,11 @@ def handle_move_replacement_dialogue(strategy: BattleStrategy) -> Generator:
                 while get_learn_move_state() != LearnMoveState.SelectMoveToReplace:
                     context.emulator.press_button("A")
                     yield
+                    yield
             else:
                 while get_learn_move_state() != LearnMoveState.ConfirmCancellation:
                     context.emulator.press_button("B")
+                    yield
                     yield
             already_confirmed = True
             debug.action_stack.pop()
@@ -126,6 +133,10 @@ def handle_move_replacement_dialogue(strategy: BattleStrategy) -> Generator:
             debug.action_stack.append("LearnMoveState.ConfirmCancellation")
             while get_learn_move_state() not in (LearnMoveState.Unknown, LearnMoveState.DialogueNotActive):
                 context.emulator.press_button("A")
+                yield
+                # JOY_NEW requires a released frame. In RS, the first A may be
+                # consumed while constructing the menu; the next distinct A
+                # confirms its default "Yes" selection.
                 yield
             debug.action_stack.pop()
 
@@ -144,10 +155,21 @@ def handle_move_replacement_dialogue(strategy: BattleStrategy) -> Generator:
                 while get_learn_move_state() not in (LearnMoveState.Unknown, LearnMoveState.DialogueNotActive):
                     context.emulator.press_button("A")
                     yield
+                    yield
             debug.action_stack.pop()
 
         else:
-            context.emulator.press_button("B")
+            if context.rom.is_emerald:
+                printer_state = get_text_printer().state
+                if printer_state is TextPrinterState.WaitForButton and unknown_frames % 4 == 0:
+                    context.emulator.press_button("A")
+            else:
+                # Ruby/Sapphire's move-learning state machine expects B while
+                # its dialogue state is temporarily unknown. Pulse it so
+                # JOY_NEW observes a released frame between presses.
+                if unknown_frames % 2 == 0:
+                    context.emulator.press_button("B")
+            unknown_frames += 1
             yield
 
 

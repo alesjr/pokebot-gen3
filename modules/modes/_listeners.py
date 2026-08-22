@@ -105,7 +105,9 @@ class BattleListener(BotListener):
             else:
                 self._active_wild_encounter = None
 
-            action = bot_mode.on_battle_started(self._active_wild_encounter)
+            action = bot_mode.on_navigation_battle_started(self._active_wild_encounter)
+            if action is None:
+                action = bot_mode.on_battle_started(self._active_wild_encounter)
 
             if encounter_type is EncounterType.Trainer and not isinstance(action, BattleStrategy):
                 action = BattleAction.Fight

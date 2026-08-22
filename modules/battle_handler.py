@@ -236,7 +236,12 @@ def handle_fainted_pokemon(strategy: BattleStrategy):
         return
 
     if index_needs_mapping:
-        new_lead_index = battle_state.map_battle_party_index(new_lead_index)
+        mapped_index = battle_state.map_battle_party_index(new_lead_index)
+        # Empty battle-order slots may place a real party member beyond the
+        # compact party menu's last visible index.  In that case the regular
+        # party index is the only valid cursor target.
+        if mapped_index < get_party_size():
+            new_lead_index = mapped_index
 
     yield from scroll_to_party_menu_index(new_lead_index)
     while get_game_state() == GameState.PARTY_MENU:

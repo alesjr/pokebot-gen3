@@ -59,6 +59,14 @@ def _build_snapshot() -> dict:
             ),
         }
     )
+    if context.video_stream is not None:
+        video = context.video_stream.stats()
+        runtime["video_stream"] = {
+            "subscribers": video.subscribers,
+            "captured_frames": video.captured_frames,
+            "encoded_frames": video.encoded_frames,
+            "dropped_frames": video.dropped_frames,
+        }
     return {
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "game": context.rom.game_name,
@@ -78,6 +86,7 @@ def _build_snapshot() -> dict:
             "qualified": len(collection.collected),
             "box_used": collection.pokemon_count,
             "box_capacity": collection.capacity,
+            "missions": context.stats.get_living_dex_mission_summary(),
         },
         "party": party.to_list(),
         "boxes": storage.to_dict(),

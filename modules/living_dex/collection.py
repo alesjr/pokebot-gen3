@@ -9,8 +9,12 @@ PERFECT_IV_SUM = 6 * 31
 
 
 def is_qualified(pokemon: Pokemon) -> bool:
-    """Return whether a Pokémon may count toward the Living Dex."""
-    return pokemon.is_shiny or pokemon.ivs.sum() == PERFECT_IV_SUM
+    """Return whether a Pokémon may count toward shiny collection targets."""
+    return pokemon.is_shiny
+
+
+def storage_has_space(storage) -> bool:
+    return storage.pokemon_count < 14 * 30
 
 
 def is_founder_candidate(pokemon: Pokemon, minimum_iv_sum: int = 93) -> bool:

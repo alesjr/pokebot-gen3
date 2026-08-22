@@ -1,0 +1,12 @@
+{
+  "trainer": {"name": "Alesjr", "gender": "male"},
+  "dashboard_port": 8877,
+  "video": {"fps": 15, "jpeg_quality": 75},
+  "instances": [
+    {"game": "Ruby", "profile": "LivingDex-Ruby", "rom": "Pokemon - Ruby Version (USA, Europe) (Rev 2).gba", "game_code": "AXV", "revision": 2, "starter": "Mudkip", "port": 8888, "priority": 1},
+    {"game": "Sapphire", "profile": "LivingDex-Sapphire", "rom": "Pokemon - Sapphire Version (USA, Europe) (Rev 2).gba", "game_code": "AXP", "revision": 2, "starter": "Treecko", "port": 8889, "priority": 2},
+    {"game": "Emerald", "profile": "LivingDex-Emerald", "rom": "Pokemon - Emerald Version (USA, Europe).gba", "game_code": "BPE", "revision": 0, "starter": "Torchic", "port": 8890, "priority": 3},
+    {"game": "FireRed", "profile": "LivingDex-FireRed", "rom": "Pokemon - FireRed Version (USA, Europe) (Rev 1).gba", "game_code": "BPR", "revision": 1, "starter": "Charmander", "port": 8891, "priority": 4},
+    {"game": "LeafGreen", "profile": "LivingDex-LeafGreen", "rom": "Pokemon - Leaf Green Version (U) (V1.1).gba", "game_code": "BPG", "revision": 1, "starter": "Squirtle", "port": 8892, "priority": 5}
+  ]
+}
