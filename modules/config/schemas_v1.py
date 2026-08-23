@@ -101,7 +101,7 @@ class Dashboard(BaseConfig):
 
 class LivingDexGameplay(BaseConfig):
     progression: Literal["area"] = "area"
-    trainer_name: str = "Alesjr"
+    trainer_name: Annotated[str, Field(min_length=1, max_length=7, pattern=r"^[A-Za-z0-9]+$")] = "Alesjr"
     trainer_gender: Literal["male", "female"] = "male"
     starter: Literal["Treecko", "Torchic", "Mudkip", "Bulbasaur", "Charmander", "Squirtle"] = "Mudkip"
     fossil: Literal["Root Fossil", "Claw Fossil"] = "Root Fossil"

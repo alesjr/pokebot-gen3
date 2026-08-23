@@ -32,7 +32,7 @@ Implementado:
 - RTC histórico baseado no RTC real do RSE;
 - preditor RNG somente leitura, desativado por padrão;
 - bloqueio de `random_soft_reset_rng` dentro do modo Living Dex;
-- dashboard público, somente leitura, para rede doméstica;
+- console web autenticado para vídeo, teclado, save state e configuração;
 - inspeção de dumps de distribuição fornecidos pelo usuário por header, idioma,
   game code e CRC32.
 
@@ -51,6 +51,37 @@ as telas pelo dashboard e construir uma National Living Dex conjunta está em
 O modo atual não deve ser descrito como bot capaz de finalizar a campanha sem
 supervisão. Ele implementa políticas de coleção, founder, depósito, RTC e
 observabilidade sobre as primitivas existentes do PokéBot.
+
+## Console web na VPS
+
+Crie credenciais antes de subir o container. Senha nunca fica em texto puro;
+somente hash Argon2id entra no `.env`.
+
+```bash
+cp .env.example .env
+python utility/hash_dashboard_password.py
+# copie o hash para POKEBOT_WEB_PASSWORD_HASH e duplique cada `$` como `$$`
+docker compose up -d --build
+```
+
+Para manter Sapphire, Ruby e FireRed em processos simultâneos, use:
+
+```bash
+docker compose --profile multi up -d --build
+```
+
+Abas do console apontam para portas `8888`, `8889` e `8891`. Todos os
+processos continuam rodando quando outra aba é selecionada. Credenciais e
+sessão assinada são compartilhadas, mas saves e estados permanecem isolados
+por profile.
+
+Produção exige HTTPS. Coloque Caddy, Traefik ou Nginx na frente da porta 8888
+e exponha somente 80/443 no firewall. Para desenvolvimento local via HTTP,
+adicione `POKEBOT_COOKIE_SECURE=0` ao ambiente; nunca use isso na VPS.
+
+Console oferece play do bot, pausa com save state, save manual, reset,
+velocidade, controles GBA via tela/teclado e edição validada de
+`living_dex.yml`. Teclas: setas, `X`/`Z` (A/B), `A`/`S` (L/R), Enter e Backspace.
 
 ## RTC histórico
 

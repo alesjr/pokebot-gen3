@@ -5,6 +5,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.theme import Theme
 
+from modules.runtime_log import runtime_log
+
 if TYPE_CHECKING:
     from modules.encounter import EncounterInfo
     from modules.pokemon import Pokemon
@@ -220,4 +222,4 @@ def print_stats(stats: "GlobalStats", encounter: "EncounterInfo") -> None:
     )
 
 
-console = Console(theme=theme)
+console = Console(theme=theme, file=runtime_log)

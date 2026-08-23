@@ -1,5 +1,6 @@
 """Module for managing and accessing configuration."""
 
+import os
 from pathlib import Path
 
 from confz import BaseConfig, FileSource
@@ -135,4 +136,9 @@ def save_config_file(config_dir: Path, config_inst: BaseConfig, strict: bool = F
         raise exceptions.PrettyValueError(f"The file {config_file} already exists. Refusing to overwrite it.")
     yaml = YAML()
     yaml.allow_unicode = False
-    yaml.dump(config_inst.model_dump(), config_dir / config_inst.filename)
+    temporary_file = config_file.with_suffix(config_file.suffix + ".tmp")
+    try:
+        yaml.dump(config_inst.model_dump(), temporary_file)
+        os.replace(temporary_file, config_file)
+    finally:
+        temporary_file.unlink(missing_ok=True)

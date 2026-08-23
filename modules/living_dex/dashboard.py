@@ -42,6 +42,7 @@ def _build_snapshot() -> dict:
     clock = get_clock_time()
     party = get_party()
     runtime = runtime_events()
+    last_encounter = context.stats.last_encounter
     speed = context.emulation_speed
     runtime.update(
         {
@@ -56,6 +57,20 @@ def _build_snapshot() -> dict:
             "emulator_frame": context.emulator.get_frame_count(),
             "controller": (
                 context.controller_stack[-1].__qualname__ if len(context.controller_stack) > 0 else None
+            ),
+            "last_encounter": (
+                None
+                if last_encounter is None
+                else {
+                    "species": last_encounter.species_name,
+                    "level": last_encounter.pokemon.level,
+                    "shiny": last_encounter.is_shiny,
+                    "shiny_value": last_encounter.shiny_value,
+                    "iv_sum": last_encounter.iv_sum,
+                    "map": last_encounter.map,
+                    "time": last_encounter.encounter_time.isoformat(),
+                    "bot_mode": last_encounter.bot_mode,
+                }
             ),
         }
     )

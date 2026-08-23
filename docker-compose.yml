@@ -16,12 +16,17 @@ x-pokebot-common: &pokebot-common
     PYTHONUNBUFFERED: "1"
     POKEBOT_FLEET_TOKEN: ${POKEBOT_FLEET_TOKEN:-}
     POKEBOT_FLEET_URL: http://fleet-coordinator:8877
+    POKEBOT_WEB_USERNAME: ${POKEBOT_WEB_USERNAME:?set POKEBOT_WEB_USERNAME in .env}
+    POKEBOT_WEB_PASSWORD_HASH: ${POKEBOT_WEB_PASSWORD_HASH:?set POKEBOT_WEB_PASSWORD_HASH in .env}
+    POKEBOT_WEB_SESSION_SECRET: ${POKEBOT_WEB_SESSION_SECRET:?set POKEBOT_WEB_SESSION_SECRET in .env}
+    POKEBOT_COOKIE_SECURE: ${POKEBOT_COOKIE_SECURE:-1}
+    POKEBOT_PROFILE_PORTS: ${POKEBOT_PROFILE_PORTS:-Sapphire:8888,Ruby:8889,FR:8891}
   networks:
     fleet-private:
       aliases:
         - ${POKEBOT_PROFILE_SLUG:-pokebot}
   healthcheck:
-    test: ["CMD", "curl", "-fsS", "http://localhost:8888/dashboard/state"]
+    test: ["CMD", "curl", "-fsS", "http://localhost:8888/healthz"]
     interval: 30s
     timeout: 5s
     retries: 3
@@ -45,6 +50,26 @@ services:
       - ${POKEBOT_EMULATION_SPEED:-0}
       - --no-video
       - --no-audio
+
+  pokebot-ruby:
+    <<: *pokebot-common
+    profiles: ["multi"]
+    ports:
+      - "8889:8888"
+    networks:
+      fleet-private:
+        aliases: ["pokebot-ruby"]
+    command: ["python", "pokebot.py", "Ruby", "--bot-mode", "Living Dex Gen III", "--headless", "--emulation-speed", "0", "--no-video", "--no-audio"]
+
+  pokebot-firered:
+    <<: *pokebot-common
+    profiles: ["multi"]
+    ports:
+      - "8891:8888"
+    networks:
+      fleet-private:
+        aliases: ["pokebot-firered"]
+    command: ["python", "pokebot.py", "FR", "--bot-mode", "Living Dex Gen III", "--headless", "--emulation-speed", "0", "--no-video", "--no-audio"]
 
   # Opt-in because it shares writable profiles with the headless service.
   # Start with: docker compose --profile gui up pokebot-gui
