@@ -121,11 +121,6 @@ class LibmgbaEmulator:
         if not self._core:
             raise RuntimeError(f"Could not load ROM file {str(profile.rom.file)}")
 
-        from modules.context import context
-        from modules.living_dex.rtc import configure_historical_rtc
-
-        configure_historical_rtc(self._core, profile, profile.rom, context.config.living_dex.rtc)
-
         # libmgba needs a save file to be loaded, or otherwise it will not save anything
         # to disk if the player saves the game. This can be an empty file.
         self._current_save_path = profile.path / "current_save.sav"
@@ -149,10 +144,6 @@ class LibmgbaEmulator:
         if not is_test_run and self._current_state_path.exists():
             with open(self._current_state_path, "rb") as state_file:
                 self.load_save_state(state_file.read())
-
-        # Loading a state can restore RTC configuration. Historical RTC remains
-        # authoritative and continues from wall-clock time, including downtime.
-        configure_historical_rtc(self._core, profile, profile.rom, context.config.living_dex.rtc)
 
         self._memory: mgba.gba.GBAMemory = self._core.memory
         self._on_frame_callback = on_frame_callback

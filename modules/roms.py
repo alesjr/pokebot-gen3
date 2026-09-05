@@ -135,6 +135,14 @@ class ROM:
         return self.game_title in ["POKEMON FIRE", "POKEMON LEAF"]
 
     @property
+    def starter_names(self) -> tuple[str, ...]:
+        if self.is_rse:
+            return "Treecko", "Torchic", "Mudkip"
+        if self.is_frlg:
+            return "Bulbasaur", "Charmander", "Squirtle"
+        return ()
+
+    @property
     def is_fr(self) -> bool:
         return self.game_title == "POKEMON FIRE"
 

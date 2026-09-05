@@ -42,53 +42,6 @@ class FleetClient:
         self._next_heartbeat = now + self._heartbeat_interval
         return True
 
-    def reconcile_specimens(self, specimens: list[dict]) -> None:
-        if self._lease_token is None:
-            raise RuntimeError("fleet lease not acquired")
-        self._request(
-            "/internal/specimens/reconcile",
-            {"profile": self._profile, "lease_token": self._lease_token, "specimens": specimens},
-        )
-
-    def acquire_target(self, completed_prerequisites: set[str], *, ttl: int = 120) -> dict:
-        if self._lease_token is None:
-            raise RuntimeError("fleet lease not acquired")
-        return self._request(
-            "/internal/targets/acquire",
-            {
-                "profile": self._profile,
-                "lease_token": self._lease_token,
-                "completed_prerequisites": sorted(completed_prerequisites),
-                "ttl": ttl,
-            },
-        )
-
-    def release_target(self, assignment_token: str) -> None:
-        if self._lease_token is None:
-            raise RuntimeError("fleet lease not acquired")
-        self._request(
-            "/internal/targets/release",
-            {
-                "profile": self._profile,
-                "lease_token": self._lease_token,
-                "assignment_token": assignment_token,
-            },
-        )
-
-    def renew_target(self, assignment_token: str, *, ttl: int = 120) -> str:
-        if self._lease_token is None:
-            raise RuntimeError("fleet lease not acquired")
-        response = self._request(
-            "/internal/targets/renew",
-            {
-                "profile": self._profile,
-                "lease_token": self._lease_token,
-                "assignment_token": assignment_token,
-                "ttl": ttl,
-            },
-        )
-        return response["expires_at"]
-
     def release(self) -> None:
         if self._lease_token is None:
             return

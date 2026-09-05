@@ -1,4 +1,5 @@
 import contextlib
+import shutil
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -31,6 +32,9 @@ class Profile:
     rom: ROM
     path: Path
     last_played: datetime | None
+    trainer_name: str = ""
+    trainer_gender: str = "male"
+    starter: str = ""
 
 
 def list_available_profiles() -> list[Profile]:
@@ -68,7 +72,14 @@ def load_profile(path: Path) -> Profile:
         rom = load_rom_data(rom_file)
         if rom.is_gen2:
             raise RuntimeError("Only Generation 3 games are supported")
-        return Profile(rom, path, last_played)
+        return Profile(
+            rom,
+            path,
+            last_played,
+            metadata.trainer_name,
+            metadata.trainer_gender,
+            metadata.starter,
+        )
     else:
         for rom in list_available_roms():
             if all(
@@ -78,7 +89,14 @@ def load_profile(path: Path) -> Profile:
                     rom.language.value == metadata.rom.language,
                 ]
             ):
-                return Profile(rom, path, last_played)
+                return Profile(
+                    rom,
+                    path,
+                    last_played,
+                    metadata.trainer_name,
+                    metadata.trainer_gender,
+                    metadata.starter,
+                )
 
     console.print(
         f"[bold red]Could not find ROM `{metadata.rom.file_name}` for profile `{path.name}`, "
@@ -91,7 +109,14 @@ def profile_directory_exists(name: str) -> bool:
     return (PROFILES_DIRECTORY / name).exists()
 
 
-def create_profile(name: str, rom: ROM) -> Profile:
+def create_profile(
+    name: str,
+    rom: ROM,
+    *,
+    trainer_name: str = "",
+    trainer_gender: str = "male",
+    starter: str = "",
+) -> Profile:
     if name.startswith("_"):
         raise exceptions.PrettyValueError('Profile names cannot start with the underscore "_" character.')
     profile_directory = PROFILES_DIRECTORY / name
@@ -104,7 +129,26 @@ def create_profile(name: str, rom: ROM) -> Profile:
         revision=rom.revision,
         language=str(rom.language),
     )
-    profile_metadata = ProfileMetadata(rom=rom_cfg)
+    profile_metadata = ProfileMetadata(
+        rom=rom_cfg,
+        trainer_name=trainer_name,
+        trainer_gender=trainer_gender,
+        starter=starter,
+    )
     save_config_file(profile_directory, profile_metadata, strict=False)
 
-    return Profile(rom, profile_directory, None)
+    return Profile(rom, profile_directory, None, trainer_name, trainer_gender, starter)
+
+
+def clear_profile_data(profile: Profile) -> None:
+    """Delete profile data while preserving its ROM association metadata."""
+    profile_directory = profile.path
+    if profile_directory.is_symlink() or profile_directory.parent.resolve() != PROFILES_DIRECTORY.resolve():
+        raise RuntimeError("Path is not a resettable profile directory.")
+    for entry in profile_directory.iterdir():
+        if entry.name == ProfileMetadata.filename:
+            continue
+        if entry.is_symlink() or entry.is_file():
+            entry.unlink()
+        elif entry.is_dir():
+            shutil.rmtree(entry)

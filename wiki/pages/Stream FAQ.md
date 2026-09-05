@@ -10,7 +10,6 @@ A basic explanation of what this bot is doing is covered in [the explanation vid
 
 This bot is attempting a **Professor Oak's Living Shiny Dex Challenge** in Pokémon Emerald. This means obtaining one of every single shiny Pokémon as soon as it's available. A breakdown of all the challenges being mixed together here is:
 - The **Professor Oak's Challenge** requires you to obtain one of every single Pokémon available to you before you can fight the next Gym leader(/the League) and continue with the game. This means catching one of each Pokémon available and evolving it as far as it can go - Pokémon that require items to evolve that we can’t get yet will be evolved as soon as the item becomes available.
-- A **Living Dex** means having one of every single Pokémon in your boxes - if a Pokémon can evolve, you will need one of each. For example, you will need 3 Ralts: one to stay as a Ralts, one to evolve into a Kirlia, and a third and final one to evolve into a Gardevoir. _(Gallade doesn’t exist in Gen III, before anyone asks)_ 
 - As this is a **Shiny Dex**, every single one of these Pokémon also has to be **shiny**. A **shiny Pokémon** is a rare version of a Pokémon with different colours than normal and a special sparkling animation when sent into battle. 
   - **In Emerald, there is a 1 in 8,192 chance for a Pokémon to be shiny.** These odds cannot be boosted in any way in Gen 3.
 

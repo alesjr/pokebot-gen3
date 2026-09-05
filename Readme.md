@@ -1,318 +1,62 @@
-# PokéBot Gen3 — Living Dex RSE
+# PokéBot Gen3 — Campaign RSE
 
-Automação experimental para Pokémon Ruby, Sapphire e Emerald usando Python,
-`libmgba` e os bindings do mGBA. Este fork mantém os modos úteis do projeto
-original e adiciona a base do desafio Living Dex RSE.
+Fork focado em automação de campanha para Pokémon Ruby, Sapphire e Emerald.
 
-## Objetivo do desafio
+## Escopo atual
 
-- Coleção separada por perfil e jogo: Ruby, Sapphire e Emerald.
-- Somente Pokémon shiny ou com seis IVs iguais a 31 entram na coleção.
-- Até seis Pokémon comuns podem permanecer no time para campanha e HMs.
-- O inicial configurado deve ser shiny.
-- Após receber Poké Balls, o primeiro Pokémon comum com soma de IVs mínima
-  configurada vira o `founder_operational`.
-- Com founder confirmado, o inicial shiny é depositado no PC de Oldale.
-- Duplicatas qualificadas são preservadas enquanto houver espaço.
-- Variações persistentes usam gênero e as 28 formas de Unown. Padrões de
-  manchas de Spinda e formas temporárias não fazem parte da meta.
+- modo `Campaign` disponível somente para RSE;
+- primeira missão automatizada: criação do save, relógio, rival e escolha do inicial;
+- progresso de missões persistido em `stats/missions.db`;
+- dashboard e emulador executados no mesmo container;
+- modos tradicionais do PokéBot continuam disponíveis.
 
-## Estado atual
+FireRed e LeafGreen não fazem parte da automação de campanha.
 
-Implementado:
+## Requisitos
 
-- modo `Living Dex RSE` disponível em Ruby, Sapphire e Emerald;
-- captura direta de shiny e Pokémon 6×31 IV;
-- delegação automática para soft reset diante de encontros estáticos suportados;
-- lendários estáticos aceitos somente quando shiny, com save obrigatório apó captura;
-- seleção do próximo marco da história pelas event flags do jogo;
-- seleção e proteção lógica do founder somente após captura confirmada;
-- depósito automático do inicial shiny no PC de Oldale após obter founder;
-- progresso persistente por perfil em `living_dex_progress.json`;
-- RTC histórico baseado no RTC real do RSE;
-- preditor RNG somente leitura, desativado por padrão;
-- bloqueio de `random_soft_reset_rng` dentro do modo Living Dex;
-- console web autenticado para vídeo, teclado, save state e configuração;
-- inspeção de dumps de distribuição fornecidos pelo usuário por header, idioma,
-  game code e CRC32.
+- Python 3.12;
+- dependências nativas exigidas por mGBA e SDL;
+- ROM original compatível;
+- Docker e Docker Compose para execução em containers.
 
-Ainda pendente:
-
-- automação integral da campanha, ginásios, HMs e quests;
-- caça autônoma completa por área;
-- soft reset do inicial integrado ao mesmo fluxo contínuo do Living Dex;
-- execução de distribuições oficiais por segundo core e link emulado;
-- transferência real para Geração IV/Pal Park.
-
-O projeto futuro para executar os cinco jogos GBA simultaneamente, transmitir
-as telas pelo dashboard e construir uma National Living Dex conjunta está em
-[Frota Living Dex Gen III](docs/FLEET_LIVING_DEX_GEN3.md).
-
-O modo atual não deve ser descrito como bot capaz de finalizar a campanha sem
-supervisão. Ele implementa políticas de coleção, founder, depósito, RTC e
-observabilidade sobre as primitivas existentes do PokéBot.
-
-## Console web na VPS
-
-Crie credenciais antes de subir o container. Senha nunca fica em texto puro;
-somente hash Argon2id entra no `.env`.
+Instale dependências Python:
 
 ```bash
-cp .env.example .env
-python utility/hash_dashboard_password.py
-# copie o hash para POKEBOT_WEB_PASSWORD_HASH e duplique cada `$` como `$$`
-docker compose up -d --build
-```
-
-Para manter Sapphire, Ruby e FireRed em processos simultâneos, use:
-
-```bash
-docker compose --profile multi up -d --build
-```
-
-Abas do console apontam para portas `8888`, `8889` e `8891`. Todos os
-processos continuam rodando quando outra aba é selecionada. Credenciais e
-sessão assinada são compartilhadas, mas saves e estados permanecem isolados
-por profile.
-
-Produção exige HTTPS. Coloque Caddy, Traefik ou Nginx na frente da porta 8888
-e exponha somente 80/443 no firewall. Para desenvolvimento local via HTTP,
-adicione `POKEBOT_COOKIE_SECURE=0` ao ambiente; nunca use isso na VPS.
-
-Console oferece play do bot, pausa com save state, save manual, reset,
-velocidade, controles GBA via tela/teclado e edição validada de
-`living_dex.yml`. Teclas: setas, `X`/`Z` (A/B), `A`/`S` (L/R), Enter e Backspace.
-
-## RTC histórico
-
-O horário vem do RTC do mGBA, não de escrita direta na memória do jogo.
-
-| Jogo | Data inicial virtual |
-|---|---:|
-| Ruby / Sapphire | 25/08/2003 |
-| Emerald | 21/11/2005 |
-
-Na primeira execução do perfil, o bot cria `rtc_anchor.json`. A partir desse
-marco, o relógio avança pelo tempo real de parede, inclusive enquanto o emulador
-está desligado e independentemente da velocidade de emulação. Saves e states já
-existentes recebem cópia em `rtc_migration_backup/` antes da primeira ancoragem.
-
-Arquivos `.pk3` da Geração III não armazenam data de captura. A data configurada
-para futura transferência via Pal Park é `27/08/2007`, mas a transferência ainda
-não está implementada.
-
-## RNG
-
-Configuração padrão:
-
-```yaml
-rng:
-  mode: disabled
-  targets:
-    - wild
-    - static
-    - starter
-```
-
-O preditor futuro lê `gRngValue` e calcula frames Method 1. Ele não escreve RNG,
-save ou dados de Pokémon. `random_soft_reset_rng` deve continuar `false`.
-
-## Dashboard
-
-Disponível por padrão em:
-
-```text
-http://localhost:8888/
-```
-
-O servidor escuta `0.0.0.0:8888`, sem autenticação ou TLS, para uso em rede
-doméstica confiável. Ele não oferece controles do emulador. Exibe:
-
-- Pokédex vista, capturada e qualificada;
-- variantes coletadas;
-- quests e objetivo atual;
-- time, boxes, founder e inicial depositado;
-- RTC, TID, SID e caminhos absolutos do perfil, ROM e save.
-- estado da instância, modo, headless/GUI, velocidade, frames e contadores;
-- feed operacional dos últimos 100 resets, encontros, batalhas, saves, quests e erros.
-
-Não exponha a porta diretamente à internet.
-
-## Instalação local
-
-Requisitos principais:
-
-- Python 3.12 ou superior;
-- dependências nativas do mGBA;
-- ROM obtida legalmente pelo usuário.
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
 python -m pip install -r requirements.txt
-python pokebot.py
 ```
 
-Coloque ROMs em `roms/`. Na interface, crie um perfil separado para cada jogo.
-ROMs, saves, states, estatísticas e perfis são ignorados pelo Git.
+## Execução local
 
-Execução direta de perfil:
+Crie ou importe perfil pela interface padrão. Depois execute:
 
 ```bash
-python pokebot.py Sapphire -m "Living Dex RSE"
+python pokebot.py Sapphire -m Campaign
+```
+
+Para execução headless:
+
+```bash
+python pokebot.py Campaign-Sapphire --bot-mode Campaign --headless --emulation-speed 0 --no-audio
+```
+
+Configuração de treinador e inicial usa variáveis de ambiente:
+
+```bash
+export POKEBOT_CAMPAIGN_TRAINER_NAME=Alesjr
+export POKEBOT_CAMPAIGN_STARTER=Treecko
 ```
 
 ## Docker
 
-Docker é o caminho padrão de execução. Somente dois diretórios do host são
-montados:
-
-- `roms/`, somente leitura dentro do container;
-- `profiles/`, leitura e escrita.
-
-Configurações, saves, states, screenshots, estatísticas, `.pk3`, progresso e
-âncoras RTC ficam dentro de `profiles/`. Não existem volumes paralelos para
-esses dados.
-
-Antes da execução headless, crie ou importe o perfil pela GUI. O nome informado
-em `POKEBOT_PROFILE` deve corresponder ao diretório em `profiles/`.
-
-### Atalho recomendado
-
-O script `pokebot-docker.sh` controla imagem, emulador e dashboard:
+Configure `POKEBOT_PROFILE` no `.env` e suba a aplicação:
 
 ```bash
-./pokebot-docker.sh gui Sapphire
-./pokebot-docker.sh headless Emerald
-./pokebot-docker.sh status Sapphire
-./pokebot-docker.sh logs Ruby
-./pokebot-docker.sh stop Emerald
+cp .env.example .env
+docker compose up -d --build
 ```
 
-Sem argumentos, inicia GUI usando perfil `Sapphire`:
+Um container `pokebot` executa emulador, bot e dashboard. Dashboard: `http://localhost:8888/`.
 
-```bash
-./pokebot-docker.sh
-```
+## Projeto original
 
-Cada perfil usa projeto Compose isolado. Portas padrão: Sapphire `8888`, Ruby
-`8889` e Emerald `8890`. O script para serviço oposto somente dentro do mesmo
-perfil, impedindo dois containers de escreverem no mesmo save sem afetar outros jogos.
-
-Execução simultânea:
-
-```bash
-sh pokebot-docker.sh headless Sapphire
-sh pokebot-docker.sh headless Ruby
-sh pokebot-docker.sh headless Emerald
-```
-
-Porta customizada pode ser informada como terceiro argumento:
-
-```bash
-sh pokebot-docker.sh headless Ruby 9001
-```
-
-Headless usa velocidade máxima (`0`, sem throttle) por padrão. Quarto argumento
-define multiplicador; `0` mantém máximo possível:
-
-```bash
-sh pokebot-docker.sh headless Sapphire 8888 0
-sh pokebot-docker.sh gui Sapphire 8888 16
-```
-
-Headless, modo Living Dex e dashboard na porta `8888`:
-
-```bash
-POKEBOT_PROFILE=Sapphire docker compose up --build pokebot
-```
-
-Modo e porta podem ser alterados:
-
-```bash
-POKEBOT_PROFILE=Emerald \
-POKEBOT_MODE="Living Dex RSE" \
-POKEBOT_DASHBOARD_PORT=8888 \
-docker compose up --build pokebot
-```
-
-GUI opcional via X11, dashboard publicado na porta `8889`:
-
-```bash
-xhost +local:docker
-POKEBOT_PROFILE=Sapphire docker compose --profile gui up --build pokebot-gui
-```
-
-Não execute `pokebot` e `pokebot-gui` simultaneamente com mesmo perfil. Script
-impede isso quando usado como entrada. Serviço GUI usa profile opcional do Compose.
-
-Estado dos containers:
-
-```bash
-sh pokebot-docker.sh status Sapphire
-curl -fsS http://localhost:8888/dashboard/state
-```
-
-## Configuração
-
-Arquivos padrão ficam em `modules/config/templates/`:
-
-- `living_dex.yml`: starter, fóssil, founder, RTC, RNG e transferência futura;
-- `dashboard.yml`: bind e porta do dashboard;
-- `battle.yml`: estratégia de batalha e captura;
-- `cheats.yml`: opções invasivas, mantidas desativadas.
-
-Valores principais:
-
-```yaml
-gameplay:
-  progression: area
-  starter: Mudkip
-  fossil: Root Fossil
-  founder_min_iv_sum: 93
-quality:
-  shiny: true
-  perfect_ivs: true
-duplicates: keep_until_full
-recovery:
-  mode: rollback
-  max_attempts: 3
-```
-
-## Distribuições oficiais
-
-O projeto não inclui nem baixa ROMs de distribuição. O validador aceita somente
-arquivos fornecidos pelo usuário e pode conferir:
-
-- header GBA;
-- checksum do header;
-- código do jogo;
-- idioma;
-- CRC32 permitido.
-
-A validação existe; emulação do segundo core e protocolo de link ainda estão
-pendentes.
-
-## Verificação
-
-Testes específicos adicionados:
-
-```bash
-python -m unittest tests.test_living_dex
-python -m compileall -q modules tests plugins
-```
-
-## Origem e atribuições
-
-Baseado em [40Cakes/pokebot-gen3](https://github.com/40Cakes/pokebot-gen3).
-
-- [mGBA](https://github.com/mgba-emu/mgba)
-- [libmgba-py](https://github.com/hanzi/libmgba-py/)
-- [pret/pokeemerald](https://github.com/pret/pokeemerald)
-- [pret/pokeruby](https://github.com/pret/pokeruby)
-- [pret/pokefirered](https://github.com/pret/pokefirered)
-
-Pokémon e nomes relacionados pertencem aos respectivos detentores. Este projeto
-não distribui ROMs comerciais.
-
-Licença: consulte [LICENSE](LICENSE).
+Baseado em [pokebot-gen3](https://github.com/40Cakes/pokebot-gen3).

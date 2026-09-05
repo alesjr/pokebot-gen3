@@ -10,7 +10,7 @@ from modules.player import get_player_avatar
 from modules.pokemon import get_opponent, StatusCondition, StatsValues, Pokemon
 from modules.pokemon_party import get_party
 from ._interface import BotMode, BotModeError
-from .util import navigate_to, heal_in_pokemon_center, spin
+from .util import change_lead_party_pokemon, navigate_to, heal_in_pokemon_center, spin
 from .util.map import map_has_pokemon_center_nearby, find_closest_pokemon_center
 from ..battle_state import BattleOutcome
 from ..battle_strategies import BattleStrategy, DefaultBattleStrategy
@@ -101,9 +101,12 @@ class EVTrainMode(BotMode):
         self._go_healing = True
         self._level_balance = False
         self._ev_targets: StatsValues | None = None
+        self._level_target: int | None = None
 
     def on_battle_started(self, encounter: EncounterInfo | None) -> BattleAction | BattleStrategy | None:
         action = handle_encounter(encounter, enable_auto_battle=True)
+        if self._level_target is not None:
+            return NoRotateLeadDefaultBattleStrategy() if action is BattleAction.Fight else action
         lead_pokemon = get_party()[0]
         # EV yield doubled with Macho Brace and Pokerus (this effect stacks)
         ev_multiplier = 1
@@ -126,12 +129,21 @@ class EVTrainMode(BotMode):
             return action
 
     def on_battle_ended(self, outcome: "BattleOutcome") -> None:
-        lead_pokemon = get_party()[0]
+        party = get_party()
+        if party.first_non_fainted is None:
+            self._leave_pokemon_center = True
+            return
+        lead_pokemon = party[0]
         if (
             not DefaultBattleStrategy().pokemon_can_battle(lead_pokemon)
             or lead_pokemon.status_condition is not StatusCondition.Healthy
         ):
             self._go_healing = True
+
+        if self._level_target is not None:
+            if outcome == BattleOutcome.Won:
+                context.message = f"{lead_pokemon.species.name}: level {lead_pokemon.level}/{self._level_target}"
+            return
 
         # Ugly table to keep track of progress
         _print_target_table(lead_pokemon, self._ev_targets)
@@ -195,3 +207,42 @@ class EVTrainMode(BotMode):
 
             yield from navigate_to(training_spot_map, training_spot_coordinates)
             yield from spin(stop_condition=lambda: self._go_healing or self._leave_pokemon_center)
+
+    def run_until_party_level(
+        self,
+        target_level: int,
+    ) -> Generator:
+        if target_level <= 0:
+            raise BotModeError("EV Train campaign target level must be positive.")
+
+        training_spot = get_map_data_for_current_position()
+        if not training_spot.has_encounters:
+            raise BotModeError("There are no encounters on this tile.")
+
+        self._level_target = target_level
+        training_spot_map = get_map_enum(training_spot)
+        training_spot_coordinates = training_spot.local_position
+        pokemon_center = find_closest_pokemon_center(training_spot)
+
+        while any(pokemon.level < target_level for pokemon in get_party().non_eggs):
+            target_index = next(
+                index
+                for index, pokemon in enumerate(get_party())
+                if not pokemon.is_egg and pokemon.level < target_level
+            )
+            if target_index != 0:
+                yield from change_lead_party_pokemon(target_index)
+
+            if self._leave_pokemon_center:
+                yield from navigate_to(get_player_avatar().map_group_and_number, (7, 8))
+            elif self._go_healing:
+                yield from heal_in_pokemon_center(pokemon_center)
+
+            self._leave_pokemon_center = False
+            self._go_healing = False
+            yield from navigate_to(training_spot_map, training_spot_coordinates)
+            yield from spin(
+                stop_condition=lambda: self._go_healing
+                or self._leave_pokemon_center
+                or get_party()[0].level >= target_level
+            )

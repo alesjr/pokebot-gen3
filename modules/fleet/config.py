@@ -57,7 +57,7 @@ def validate_fleet_config(config: FleetConfig) -> None:
     starters = {item.game: item.starter for item in config.instances}
 
     if set(games) != EXPECTED_GAMES or len(games) != len(EXPECTED_GAMES):
-        errors.append("instances must contain Ruby, Sapphire, Emerald, FireRed and LeafGreen exactly once")
+        errors.append("instances must contain all five supported games exactly once")
     if len(profiles) != len(set(profiles)):
         errors.append("profile names must be unique")
     if any(not name or "/" in name or "\\" in name or name in {".", ".."} for name in profiles):

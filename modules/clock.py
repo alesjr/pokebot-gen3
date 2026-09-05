@@ -1,7 +1,29 @@
 from dataclasses import dataclass
+from typing import Generator
 
 from modules.context import context
-from modules.memory import read_symbol, unpack_uint16, get_save_block
+from modules.memory import (
+    get_event_flag,
+    get_game_state_symbol,
+    get_save_block,
+    read_symbol,
+    unpack_uint16,
+)
+from modules.map_data import MapRSE
+from modules.modes._interface import BotModeError
+from modules.modes.util import (
+    ensure_facing_direction,
+    navigate_to,
+    wait_for_player_avatar_to_be_controllable,
+    walk_through_warp,
+)
+from modules.player import (
+    get_player_avatar,
+    get_player_house_maps,
+    get_player_location,
+    player_avatar_is_controllable,
+)
+from modules.tasks import get_global_script_context, get_task
 
 
 @dataclass
@@ -37,6 +59,80 @@ def get_clock_time() -> ClockTime:
 
     data = read_symbol("gLocalTime")
     return ClockTime(unpack_uint16(data[0:2]), data[2], data[3], data[4])
+
+
+def set_clock(*, timeout_frames: int = 20_000) -> Generator:
+    """Set RSE wall clock after player is positioned in front of it."""
+    if get_event_flag("SET_WALL_CLOCK"):
+        return
+
+    targeted_tile = get_player_avatar().map_location_in_front
+    clock_locations = {
+        (MapRSE.LITTLEROOT_TOWN_BRENDANS_HOUSE_2F.value, (5, 1)),
+        (MapRSE.LITTLEROOT_TOWN_MAYS_HOUSE_2F.value, (5, 1)),
+    }
+    if targeted_tile is None or (
+        (targeted_tile.map_group, targeted_tile.map_number),
+        targeted_tile.local_position,
+    ) not in clock_locations:
+        raise BotModeError("The player is not facing the bedroom clock.")
+
+    confirm_positioned = False
+    callbacks = {"CB2_WALLCLOCK", "WALLCLOCKMAINCALLBACK"}
+    for frame in range(timeout_frames):
+        if get_event_flag("SET_WALL_CLOCK"):
+            while get_global_script_context().is_active or not player_avatar_is_controllable():
+                yield
+            return
+        if get_game_state_symbol() in callbacks:
+            input_task = get_task("Task_SetClock_HandleInput") or get_task("Task_SetClock2")
+            confirm_task = get_task("Task_SetClock_HandleConfirmInput") or get_task("Task_SetClock4")
+            if input_task is not None and input_task.data_value(0) % 6 == 0:
+                confirm_positioned = False
+                context.emulator.press_button("A")
+            elif confirm_task is not None:
+                context.emulator.press_button("A" if confirm_positioned else "Up")
+                confirm_positioned = True
+        elif frame % 4 == 0:
+            context.emulator.press_button("A")
+        yield
+    raise BotModeError("Clock setup timed out before SET_WALL_CLOCK.")
+
+
+def reach_bedroom_clock(trainer_gender: str) -> Generator:
+    if get_event_flag("SET_WALL_CLOCK"):
+        return
+    first_floor, second_floor = get_player_house_maps(trainer_gender)
+    callbacks = {"CB2_WALLCLOCK", "WALLCLOCKMAINCALLBACK"}
+    if get_game_state_symbol() in callbacks:
+        return
+
+    yield from wait_for_player_avatar_to_be_controllable(
+        "B", stable_frames=120, wait_for_no_script=True, timeout_frames=4_000
+    )
+    current_map = get_player_location()[0]
+    if current_map is MapRSE.INSIDE_OF_TRUCK:
+        yield from navigate_to(MapRSE.INSIDE_OF_TRUCK, (4, 2), True, True, True, True)
+        yield from wait_for_player_avatar_to_be_controllable(
+            "B", stable_frames=120, wait_for_no_script=True, timeout_frames=4_000
+        )
+        current_map = get_player_location()[0]
+    if current_map is MapRSE.LITTLEROOT_TOWN:
+        yield from walk_through_warp(current_map, "Up")
+        yield from wait_for_player_avatar_to_be_controllable(
+            "B", stable_frames=120, wait_for_no_script=True, timeout_frames=4_000
+        )
+        current_map = get_player_location()[0]
+    if current_map is first_floor:
+        yield from walk_through_warp(first_floor, "Up", timeout_frames=4_000)
+        yield from wait_for_player_avatar_to_be_controllable(
+            "B", stable_frames=120, wait_for_no_script=True, timeout_frames=4_000
+        )
+        current_map = get_player_location()[0]
+    if current_map is not second_floor:
+        raise BotModeError(f"Clock setup cannot recover from map: {current_map.name}")
+    yield from navigate_to(second_floor, (5, 2))
+    yield from ensure_facing_direction("Up")
 
 
 @dataclass

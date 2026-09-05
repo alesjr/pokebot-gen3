@@ -42,7 +42,7 @@ def load_plugins():
 
 
 def load_built_in_plugins():
-    """No network/media integrations are loaded in the Living Dex build."""
+    """Load optional built-in integrations when configured."""
 
 
 def is_plugin_loaded(plugin_class: type[BotPlugin]) -> bool:

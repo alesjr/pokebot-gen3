@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from modules.fleet.config import load_fleet_config, validate_assets
-from modules.fleet.bootstrap import atomic_create, living_dex_config
+from modules.fleet.bootstrap import atomic_create
 
 
 def _metadata(item) -> str:
@@ -52,7 +52,6 @@ def main() -> int:
             metadata = directory / "metadata.yml"
             directory.mkdir(parents=False, exist_ok=True)
             atomic_create(metadata, _metadata(item))
-            atomic_create(directory / "living_dex.yml", living_dex_config(config, item))
     elif args.command == "list":
         for item in sorted(config.instances, key=lambda entry: entry.priority):
             print(f"{item.profile}|{item.port}|{item.game}|{item.starter}")

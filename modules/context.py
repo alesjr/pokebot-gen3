@@ -8,8 +8,6 @@ from modules.runtime import get_base_path
 if TYPE_CHECKING:
     from modules.gui import PokebotGui
     from modules.libmgba import LibmgbaEmulator
-    from modules.living_dex.missions import MissionTracker
-    from modules.living_dex.video import MjpegFrameStream
     from modules.fleet.client import FleetClient
     from modules.modes import BotListener, BotMode
     from modules.profiles import Profile
@@ -49,8 +47,6 @@ class BotContext:
         self.gui: Optional["PokebotGui"] = None
         self.profile: Optional["Profile"] = None
         self.stats: Optional["StatsDatabase"] = None
-        self.mission_tracker: Optional["MissionTracker"] = None
-        self.video_stream: Optional["MjpegFrameStream"] = None
         self.fleet_client: Optional["FleetClient"] = None
         self.debug: bool = False
         self.testing: bool = False

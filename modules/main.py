@@ -1,13 +1,12 @@
 import queue
+import os
 import sys
-import time
 from collections import deque
 from typing import Generator
 
 from modules.console import console
 from modules.context import context
 from modules.memory import get_game_state
-from modules.living_dex.observability import record_event
 from modules.modes import BotMode, BotModeError, FrameInfo, get_bot_listeners, get_bot_mode_by_name
 from modules.plugins import plugin_profile_loaded, load_built_in_plugins
 from modules.state_cache import state_cache
@@ -59,30 +58,14 @@ def main_loop() -> None:
 
         context.stats = StatsDatabase(context.profile)
 
-        mission_tracker = None
-        if context.rom.is_rse or context.rom.is_frlg:
-            from modules.living_dex.missions import MissionTracker
+        web_port = os.environ.get("POKEBOT_INSTANCE_WEB_PORT")
+        if web_port:
+            from modules.web.instance_server import start_instance_server
 
-            mission_tracker = MissionTracker(context.rom, context.stats)
-            mission_tracker.install_catalog()
-        context.mission_tracker = mission_tracker
-
-        if context.config.dashboard.enable:
-            from modules.living_dex.video import MjpegFrameStream
-            from modules.web.http import start_http_server
-
-            context.video_stream = MjpegFrameStream(
-                fps=context.config.dashboard.video_fps,
-                jpeg_quality=context.config.dashboard.video_jpeg_quality,
-            )
-            start_http_server(
-                host=context.config.dashboard.host,
-                port=context.config.dashboard.port,
-            )
+            start_instance_server(port=int(web_port))
 
         context.bot_listeners = get_bot_listeners(context.rom)
         previous_frame_info: FrameInfo | None = None
-        next_fleet_reconciliation = 0.0
 
         while True:
             if context.fleet_client is not None:
@@ -91,25 +74,6 @@ def main_loop() -> None:
                     objective=context.message or None,
                     emulator_frame=context.emulator.get_frame_count(),
                 )
-                now = time.monotonic()
-                if now >= next_fleet_reconciliation:
-                    from modules.living_dex.reconcile import profile_specimens
-                    from modules.memory import game_has_started
-                    from modules.pokemon_party import get_party
-                    from modules.pokemon_storage import get_pokemon_storage
-
-                    if game_has_started():
-                        context.fleet_client.reconcile_specimens(
-                            profile_specimens(
-                                get_party(),
-                                get_pokemon_storage(),
-                                context.profile.path.name,
-                                context.rom,
-                            )
-                        )
-                        next_fleet_reconciliation = now + 30
-            if mission_tracker is not None:
-                mission_tracker.observe_if_due()
 
             # Process work queue, which can be used to get the main thread to access the emulator
             # at a 'safe' time (i.e. not in the middle of emulating a frame.)
@@ -161,16 +125,13 @@ def main_loop() -> None:
             except (StopIteration, GeneratorExit):
                 context.controller_stack.pop()
             except BotModeError as e:
-                record_event("error", f"Erro do modo: {e}")
                 context.emulator.reset_held_buttons()
                 context.message = str(e)
                 context.set_manual_mode()
             except TimeoutError:
-                record_event("error", "Timeout fatal no loop principal")
                 console.print_exception()
                 sys.exit(1)
             except Exception as e:
-                record_event("error", f"Erro interno: {e}")
                 console.print_exception()
                 context.emulator.reset_held_buttons()
                 context.message = f"Internal Bot Error: {str(e)}"
@@ -182,20 +143,7 @@ def main_loop() -> None:
                     context.set_manual_mode()
 
             inputs_each_frame.append(context.emulator.get_inputs())
-            capture_prepared = (
-                context.video_stream.prepare_natural_frame(context.emulator)
-                if context.video_stream is not None
-                else False
-            )
-            try:
-                context.emulator.run_single_frame()
-            except BaseException:
-                if capture_prepared:
-                    context.video_stream.cancel_prepared_frame(context.emulator)
-                raise
-            else:
-                if capture_prepared:
-                    context.video_stream.finish_natural_frame(context.emulator)
+            context.emulator.run_single_frame()
             previous_frame_info = frame_info
             previous_frame_info.previous_frame = None
 

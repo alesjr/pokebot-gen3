@@ -86,68 +86,6 @@ class Cheats(BaseConfig):
     faster_pickup: bool = False
 
 
-class Dashboard(BaseConfig):
-    """Read-only Living Dex dashboard."""
-
-    filename: ClassVar = "dashboard.yml"
-    enable: bool = True
-    host: str = "0.0.0.0"
-    port: Annotated[int, Field(gt=0, lt=65536)] = 8888
-    video_fps: Annotated[int, Field(gt=0, le=60)] = 15
-    video_jpeg_quality: Annotated[int, Field(gt=0, le=95)] = 75
-    expose_trainer_ids: bool = True
-    expose_paths: bool = True
-
-
-class LivingDexGameplay(BaseConfig):
-    progression: Literal["area"] = "area"
-    trainer_name: Annotated[str, Field(min_length=1, max_length=7, pattern=r"^[A-Za-z0-9]+$")] = "Alesjr"
-    trainer_gender: Literal["male", "female"] = "male"
-    starter: Literal["Treecko", "Torchic", "Mudkip", "Bulbasaur", "Charmander", "Squirtle"] = "Mudkip"
-    fossil: Literal["Root Fossil", "Claw Fossil"] = "Root Fossil"
-    founder_min_iv_sum: Annotated[int, Field(ge=0, le=186)] = 93
-
-
-class LivingDexQuality(BaseConfig):
-    shiny: bool = True
-    perfect_ivs: bool = True
-
-
-class LivingDexRecovery(BaseConfig):
-    mode: Literal["rollback"] = "rollback"
-    max_attempts: Annotated[int, Field(gt=0, le=10)] = 3
-
-
-class LivingDexRng(BaseConfig):
-    mode: Literal["disabled", "predictive"] = "disabled"
-    targets: list[Literal["wild", "static", "starter"]] = ["wild", "static", "starter"]
-
-
-class LivingDexRTC(BaseConfig):
-    mode: Literal["historical_wallclock"] = "historical_wallclock"
-    ruby_sapphire_epoch: str = "2003-08-25"
-    emerald_epoch: str = "2005-11-21"
-
-
-class LivingDexTransfer(BaseConfig):
-    gen4_game: Literal["Diamond", "Pearl"] = "Diamond"
-    pal_park_date: str = "2007-08-27"
-
-
-class LivingDex(BaseConfig):
-    """Living Dex automation configuration shared by R/S/E profiles."""
-
-    filename: ClassVar = "living_dex.yml"
-    gameplay: LivingDexGameplay = Field(default_factory=LivingDexGameplay)
-    quality: LivingDexQuality = Field(default_factory=LivingDexQuality)
-    duplicates: Literal["keep_until_full"] = "keep_until_full"
-    recovery: LivingDexRecovery = Field(default_factory=LivingDexRecovery)
-    rtc: LivingDexRTC = Field(default_factory=LivingDexRTC)
-    rng: LivingDexRng = Field(default_factory=LivingDexRng)
-    transfer: LivingDexTransfer = Field(default_factory=LivingDexTransfer)
-    distributions_directory: str = "distributions"
-
-
 class Keys(BaseConfig):
     """Schema for GBA key configuration."""
 
@@ -221,6 +159,9 @@ class ProfileMetadata(BaseConfig):
     filename: ClassVar = "metadata.yml"
     version: PositiveInt = 1
     rom: ProfileMetadataROM = Field(default_factory=lambda: ProfileMetadataROM())
+    trainer_name: str = ""
+    trainer_gender: Literal["male", "female"] = "male"
+    starter: str = ""
 
 
 class ProfileMetadataROM(BaseConfig):

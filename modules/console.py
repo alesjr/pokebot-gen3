@@ -5,7 +5,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.theme import Theme
 
-from modules.runtime_log import runtime_log
+from modules.web.log_buffer import web_log_buffer
 
 if TYPE_CHECKING:
     from modules.encounter import EncounterInfo
@@ -222,4 +222,4 @@ def print_stats(stats: "GlobalStats", encounter: "EncounterInfo") -> None:
     )
 
 
-console = Console(theme=theme, file=runtime_log)
+console = Console(theme=theme, file=web_log_buffer)

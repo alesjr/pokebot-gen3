@@ -1,13 +1,12 @@
 """Module for managing and accessing configuration."""
 
-import os
 from pathlib import Path
 
 from confz import BaseConfig, FileSource
 from ruamel.yaml import YAML
 
 from modules import exceptions
-from modules.config.schemas_v1 import Battle, CatchBlock, Cheats, Dashboard, Keys, LivingDex, Logging, ProfileMetadata
+from modules.config.schemas_v1 import Battle, CatchBlock, Cheats, Keys, Logging, ProfileMetadata
 from modules.runtime import get_base_path
 
 # Defines which class attributes of the Config class are meant to hold required configuration data.
@@ -15,10 +14,8 @@ CONFIG_ATTRS = {
     "battle",
     "catch_block",
     "cheats",
-    "dashboard",
     "keys",
     "logging",
-    "living_dex",
 }
 
 
@@ -36,13 +33,11 @@ class Config:
         self.config_dir = Path(config_dir) if config_dir else get_base_path() / "profiles"
         self.catch_block: CatchBlock = CatchBlock()
         self.cheats: Cheats = Cheats()
-        self.dashboard: Dashboard = Dashboard()
         self.is_profile = is_profile
         self.keys: Keys = Keys()
         self.loaded = False
         self.logging: Logging = Logging()
         self.metadata: ProfileMetadata | None = None
-        self.living_dex: LivingDex = LivingDex()
         self.load(strict=strict)
 
     def load(self, config_dir: str | Path | None = None, strict: bool = True):
@@ -136,9 +131,4 @@ def save_config_file(config_dir: Path, config_inst: BaseConfig, strict: bool = F
         raise exceptions.PrettyValueError(f"The file {config_file} already exists. Refusing to overwrite it.")
     yaml = YAML()
     yaml.allow_unicode = False
-    temporary_file = config_file.with_suffix(config_file.suffix + ".tmp")
-    try:
-        yaml.dump(config_inst.model_dump(), temporary_file)
-        os.replace(temporary_file, config_file)
-    finally:
-        temporary_file.unlink(missing_ok=True)
+    yaml.dump(config_inst.model_dump(), config_dir / config_inst.filename)

@@ -1,0 +1,31 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "PokeBot Debug Mode",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/pokebot.py",
+            "args": ["--debug"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "PokeBot Docker Debug",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5679
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}",
+                    "remoteRoot": "/app"
+                }
+            ],
+            "preLaunchTask": "PokeBot Docker Debug",
+            "justMyCode": false
+        }
+    ]
+}

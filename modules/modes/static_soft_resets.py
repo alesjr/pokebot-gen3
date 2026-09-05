@@ -5,7 +5,6 @@ from modules.battle_state import BattleOutcome
 from modules.context import context
 from modules.encounter import handle_encounter, log_encounter, EncounterInfo
 from modules.map_data import MapFRLG, MapRSE
-from modules.living_dex.observability import record_event
 from modules.player import get_player_avatar
 from modules.save_data import get_save_data
 from ._asserts import (
@@ -187,7 +186,6 @@ class StaticSoftResetController:
             yield from soft_reset(mash_random_keys=True)
             rng_is_unique = yield from wait_for_unique_rng_value(max_frames=300)
             if not rng_is_unique:
-                record_event("rng_collision", "RNG repetido; iniciando novo reset")
                 continue
 
             if encounter.name == "Groudon/Kyogre":

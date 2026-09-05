@@ -2,8 +2,10 @@ from typing import TYPE_CHECKING
 
 import atexit
 import os
+from threading import Event
 
 from modules.context import context
+from modules.debug import debug
 from modules.game import set_rom
 from modules.libmgba import LibmgbaEmulator
 
@@ -19,7 +21,14 @@ class PokebotHeadless:
 
     def run(self, startup_settings: "StartupSettings"):
         if startup_settings.profile is None:
-            raise RuntimeError("Headless mode cannot be started without selecting a profile.")
+            web_port = os.environ.get("POKEBOT_INSTANCE_WEB_PORT")
+            if not web_port:
+                raise RuntimeError("Headless mode cannot be started without selecting a profile.")
+            from modules.web.instance_server import start_instance_server
+
+            start_instance_server(port=int(web_port))
+            Event().wait()
+            return
 
         context.profile = startup_settings.profile
         context.config.load(startup_settings.profile.path, strict=False)
@@ -39,7 +48,8 @@ class PokebotHeadless:
         context.audio = not startup_settings.no_audio
         context.video = not startup_settings.no_video
         context.emulation_speed = startup_settings.emulation_speed
-        context.debug = False
+        context.debug = startup_settings.debug
+        debug.enabled = context.debug
         context.bot_mode = startup_settings.bot_mode
 
         self._main_loop()

@@ -1,0 +1,14 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "PokeBot Docker Debug",
+            "type": "shell",
+            "command": "POKEBOT_DEBUGGER=vscode docker compose up --build --force-recreate -d",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

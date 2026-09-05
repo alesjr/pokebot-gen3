@@ -317,6 +317,12 @@ def get_player_location() -> tuple[MapFRLG | MapRSE, tuple[int, int]]:
     return location
 
 
+def get_player_house_maps(trainer_gender: str) -> tuple[MapRSE, MapRSE]:
+    if trainer_gender == "female":
+        return MapRSE.LITTLEROOT_TOWN_MAYS_HOUSE_1F, MapRSE.LITTLEROOT_TOWN_MAYS_HOUSE_2F
+    return MapRSE.LITTLEROOT_TOWN_BRENDANS_HOUSE_1F, MapRSE.LITTLEROOT_TOWN_BRENDANS_HOUSE_2F
+
+
 def player_is_at(map: tuple[int, int] | MapFRLG | MapRSE, coordinates: tuple[int, int]) -> bool:
     location = get_player_location()
     return location[0] == map and location[1] == coordinates

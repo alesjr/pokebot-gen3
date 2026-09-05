@@ -2,6 +2,7 @@ FROM ubuntu:24.04
 
 ARG LIBMGBA_TAG=0.2.0-2
 ARG LIBMGBA_VER=0.2.0
+ARG POKEBOT_DEBUGGER=""
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -46,6 +47,10 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+RUN if [ -n "$POKEBOT_DEBUGGER" ]; then \
+        pip install --no-cache-dir debugpy pydevd-pycharm; \
+    fi
+
 COPY . .
 
 # Forca uso do binding Linux do libmgba-py.
@@ -65,4 +70,4 @@ RUN mkdir -p /app/roms /app/profiles
 
 EXPOSE 8888
 
-CMD ["python", "pokebot.py", "Sapphire", "--bot-mode", "Living Dex Gen III", "--headless", "--no-video", "--no-audio"]
+CMD ["python", "pokebot.py", "Sapphire", "--bot-mode", "Campaign", "--headless", "--no-video", "--no-audio"]

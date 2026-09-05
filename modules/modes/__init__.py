@@ -17,6 +17,7 @@ def get_bot_modes() -> list[Type[BotMode]]:
     if len(_bot_modes) == 0:
         from .berry_blend import BerryBlendMode
         from .bunny_hop import BunnyHopMode
+        from .campaign import CampaignMode
         from .daycare import DaycareMode
         from .ev_train import EVTrainMode
         from .feebas import FeebasMode
@@ -25,7 +26,6 @@ def get_bot_modes() -> list[Type[BotMode]]:
         from .item_steal import ItemStealMode
         from .kecleon import KecleonMode
         from .level_grind import LevelGrindMode
-        from .living_dex import LivingDexMode
         from .nugget_bridge import NuggetBridgeMode
         from .puzzle_solver import PuzzleSolverMode
         from .roamer_reencounter import RoamerReencounterMode
@@ -43,6 +43,7 @@ def get_bot_modes() -> list[Type[BotMode]]:
         _bot_modes = [
             BerryBlendMode,
             BunnyHopMode,
+            CampaignMode,
             DaycareMode,
             EVTrainMode,
             FeebasMode,
@@ -51,7 +52,6 @@ def get_bot_modes() -> list[Type[BotMode]]:
             ItemStealMode,
             KecleonMode,
             LevelGrindMode,
-            LivingDexMode,
             NuggetBridgeMode,
             PuzzleSolverMode,
             RoamerReencounterMode,
@@ -76,14 +76,10 @@ def get_bot_modes() -> list[Type[BotMode]]:
 def get_bot_mode_names() -> list[str]:
     result = ["Manual"]
     result.extend(mode.name() for mode in get_bot_modes())
-    if "Living Dex Gen III" in result:
-        result.append("Living Dex RSE")
     return result
 
 
 def get_bot_mode_by_name(name: str) -> Type[BotMode] | None:
-    if name == "Living Dex RSE":
-        name = "Living Dex Gen III"
     return next((mode for mode in get_bot_modes() if mode.name() == name), None)
 
 

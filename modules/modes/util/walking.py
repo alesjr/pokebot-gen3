@@ -562,11 +562,60 @@ def run_in_circle(
 
 
 @debug.track
-def wait_for_player_avatar_to_be_controllable(button_to_press: str | None = None) -> Generator:
-    while not player_avatar_is_controllable():
-        if button_to_press is not None:
-            context.emulator.press_button(button_to_press)
+def wait_for_player_avatar_to_be_controllable(
+    button_to_press: str | None = None,
+    *,
+    stable_frames: int = 1,
+    wait_for_no_script: bool = False,
+    timeout_frames: int | None = None,
+) -> Generator:
+    stable = 0
+    frames_waited = 0
+    while stable < stable_frames:
+        ready = player_avatar_is_controllable() and (
+            not wait_for_no_script or not get_global_script_context().is_active
+        )
+        if ready:
+            stable += 1
+            if stable >= stable_frames:
+                return
+        else:
+            stable = 0
+            if button_to_press is not None:
+                context.emulator.press_button(button_to_press)
+        if timeout_frames is not None and frames_waited >= timeout_frames:
+            raise BotModeError("Timed out waiting for player control.")
+        frames_waited += 1
         yield
+
+
+@debug.track
+def walk_through_warp(
+    source_map: MapFRLG | MapRSE,
+    direction: str,
+    *,
+    target_x: int | None = None,
+    timeout_frames: int = 600,
+) -> Generator:
+    for frame in range(timeout_frames):
+        if get_player_location()[0] is not source_map:
+            return
+        if (
+            get_game_state() is GameState.OVERWORLD
+            and player_avatar_is_controllable()
+            and not get_global_script_context().is_active
+        ):
+            x = get_player_avatar().local_coordinates[0]
+            if target_x is not None and x != target_x:
+                context.emulator.press_button("Right" if x < target_x else "Left")
+            else:
+                context.emulator.press_button(direction)
+        elif frame % 3 == 0:
+            context.emulator.press_button("A")
+        yield
+    raise BotModeError(
+        f"Could not leave {source_map.name} from {get_player_avatar().local_coordinates}."
+    )
 
 
 @debug.track
