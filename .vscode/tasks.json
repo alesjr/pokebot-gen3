@@ -4,7 +4,7 @@
         {
             "label": "PokeBot Docker Debug",
             "type": "shell",
-            "command": "POKEBOT_DEBUGGER=vscode docker compose up --build --force-recreate -d",
+            "command": "POKEBOT_DEBUGGER=vscode docker compose up --build --force-recreate -d --wait",
             "options": {
                 "cwd": "${workspaceFolder}"
             },

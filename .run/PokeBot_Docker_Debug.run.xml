@@ -1,7 +1,0 @@
-<component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="PokeBot Docker Debug" type="CompoundRunConfigurationType">
-    <toRun name="PokeBot Docker Debug Server" type="PyRemoteDebugConfigurationType" />
-    <toRun name="PokeBot Docker Debug Container" type="ShConfigurationType" />
-    <method v="2" />
-  </configuration>
-</component>

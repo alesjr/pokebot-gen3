@@ -88,13 +88,7 @@ def parse_arguments(bot_mode_names: list[str]) -> StartupSettings:
     parser.add_argument(
         "-t", "--always-on-top", action="store_true", help="Keep the bot window always on top of other windows."
     )
-    parser.add_argument(
-        "-d",
-        "--debug",
-        action="store_true",
-        default=os.environ.get("POKEBOT_DEBUG", "0").lower() in {"1", "true", "yes", "on"},
-        help="Enable extra debug options and a debug menu.",
-    )
+    parser.add_argument("-d", "--debug", action="store_true", help="Enable extra debug options and a debug menu.")
     parser.add_argument("-c", "--config", type=directory_arg, dest="config_path", help=argparse.SUPPRESS)
     args = parser.parse_args()
 

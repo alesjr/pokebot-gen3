@@ -3,14 +3,11 @@ services:
     image: pokebot-gen3:local
     build:
       context: .
-      args:
-        POKEBOT_DEBUGGER: ${POKEBOT_DEBUGGER:-}
     init: true
     restart: unless-stopped
     stop_grace_period: 30s
     ports:
       - "${POKEBOT_DASHBOARD_PORT:-8888}:8888"
-      - "${POKEBOT_VSCODE_DEBUG_PORT:-5679}:5679"
     volumes:
       - ./roms:/app/roms:ro
       - ./profiles:/app/profiles
@@ -18,36 +15,8 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"
       POKEBOT_INSTANCE_WEB_PORT: "8888"
-      POKEBOT_DEBUG: ${POKEBOT_DEBUG:-0}
-      POKEBOT_DEBUGGER: ${POKEBOT_DEBUGGER:-}
-      POKEBOT_DEBUG_HOST: ${POKEBOT_DEBUG_HOST:-host.docker.internal}
-      POKEBOT_DEBUG_PORT: ${POKEBOT_DEBUG_PORT:-5678}
-      POKEBOT_VSCODE_DEBUG_PORT: ${POKEBOT_VSCODE_DEBUG_PORT:-5679}
+      POKEBOT_MODE: ${POKEBOT_MODE:-Campaign}
       POKEBOT_CAMPAIGN_TRAINER_NAME: ${POKEBOT_CAMPAIGN_TRAINER_NAME:-Alesjr}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        case "$POKEBOT_DEBUGGER" in
-          "")
-            exec "$@"
-            ;;
-          pycharm)
-            if [ "$1" = "python" ]; then shift; fi
-            exec python -m pydevd --client "$POKEBOT_DEBUG_HOST" --port "$POKEBOT_DEBUG_PORT" --file "$@" --debug
-            ;;
-          vscode)
-            if [ "$1" = "python" ]; then shift; fi
-            exec python -m debugpy --listen "0.0.0.0:$POKEBOT_VSCODE_DEBUG_PORT" --wait-for-client "$@" --debug
-            ;;
-          *)
-            echo "Unsupported debugger: $POKEBOT_DEBUGGER" >&2
-            exit 2
-            ;;
-        esac
-      - pokebot-entrypoint
     command:
       - python
       - pokebot.py

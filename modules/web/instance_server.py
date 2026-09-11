@@ -77,7 +77,7 @@ def _schedule_profile_restart(name: str | None, speed: int) -> None:
         arguments.extend(
             [
                 "--bot-mode",
-                "Manual",
+                os.environ.get("POKEBOT_MODE", "Manual"),
                 "--headless",
                 "--emulation-speed",
                 str(speed),
@@ -160,7 +160,7 @@ def _load_state(name: str) -> None:
     if not path.is_file() or path.suffix != ".ss1":
         raise ValueError("save state not found")
     context.emulator.load_save_state(path.read_bytes())
-
+"python", "pokebot.py", "Sapphire", "--bot-mode", "Campaign", "--headless", "--no-video", "--no-audio"
 
 def create_instance_app() -> web.Application:
     app = web.Application(client_max_size=64 * 1024)

@@ -48,7 +48,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 RUN if [ -n "$POKEBOT_DEBUGGER" ]; then \
-        pip install --no-cache-dir debugpy pydevd-pycharm; \
+        pip install --no-cache-dir debugpy; \
     fi
 
 COPY . .
