@@ -23,11 +23,11 @@
 
 ## 4. Seleção e manutenção da equipe
 
-- [ ] 4.1 Implementar cálculo `sum(status base) + sum(IVs)` para candidatos não shiny; confirmar por inspeção que level não aparece na pontuação nem nos desempates
-- [ ] 4.2 Comparar time e boxes durante acesso ao PC e montar melhores combatentes normais; comportamento observável: candidato de level menor substitui candidato de potencial inferior
-- [ ] 4.3 Calcular cobertura HM de cada espécie com learnset existente e selecionar menor conjunto necessário; comportamento observável: candidato único que cobre quatro HMs requeridos ocupa vaga de HM Slayer
-- [ ] 4.4 Substituir HM Slayer somente por cobertura estritamente melhor ou combinação com menos vagas, preservando requisitos temporários do catálogo; comportamento observável: trocas ocorrem pelo PC existente
-- [ ] 4.5 Reorganizar equipe mantendo shinies excluídos, vagas HM mínimas e total seis quando recursos permitirem; comportamento observável: composição resultante satisfaz regras globais e requisito temporário da missão
+- [x] 4.1 Implementar cálculo `sum(status base) + sum(IVs)` para candidatos não shiny; confirmar por inspeção que level não aparece na pontuação nem nos desempates
+- [x] 4.2 Comparar time e boxes durante acesso ao PC e montar melhores combatentes normais; comportamento observável: candidato de level menor substitui candidato de potencial inferior
+- [x] 4.3 Calcular cobertura HM de cada espécie com learnset existente e selecionar menor conjunto necessário; comportamento observável: candidato único que cobre quatro HMs requeridos ocupa vaga de HM Slayer
+- [x] 4.4 Substituir HM Slayer somente por cobertura estritamente melhor ou combinação com menos vagas, preservando requisitos temporários do catálogo; comportamento observável: trocas ocorrem pelo PC existente
+- [x] 4.5 Reorganizar equipe mantendo shinies excluídos, vagas HM mínimas e total seis quando recursos permitirem; comportamento observável: composição resultante satisfaz regras globais e requisito temporário da missão
 
 ## 5. Treino, batalha e recuperação
 

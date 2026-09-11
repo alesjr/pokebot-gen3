@@ -120,7 +120,7 @@ WITH step_catalog(
         ('mission-003-reach-route102', 'heal-captured-pokemon-oldale', 7, 'Curar equipe no Centro Pokémon de Oldale', NULL,
          'function:campaign:_heal_captured_pokemon', '{"map_group":"$step.map_group","map_number":"$step.map_number","tile_x":"$step.tile_x","tile_y":"$step.tile_y"}', 0, 10, 'OLDALE_TOWN', NULL, 6, 16, NULL, NULL),
         ('mission-003-reach-route102', 'deposit-shiny-starter', 8, 'Depositar starter shiny no PC', NULL,
-         'function:modules.campaign.rse:run_deposit_party_shinies', '{"tile_x":"$step.tile_x","tile_y":"$step.tile_y","storage_required":"$rules.shiny.storage_required"}', 2, 2, 'OLDALE_TOWN_POKEMON_CENTER_1F', NULL, 10, 2, NULL, NULL),
+         'function:modules.campaign.rse:run_organize_party_at_pc', '{"tile_x":"$step.tile_x","tile_y":"$step.tile_y","storage_required":"$rules.shiny.storage_required","optimize_party":"$rules.party.optimize_on_pc_access","target_size":"$rules.party.target_size","required_hms":[],"temporary_required_species":[]}', 2, 2, 'OLDALE_TOWN_POKEMON_CENTER_1F', NULL, 10, 2, NULL, NULL),
         ('mission-003-reach-route102', 'return-route102-grass', 9, 'Voltar para a grama da Route 102', NULL,
          'function:modules.campaign.engine:navigate_to_catalog_location', '{"map_group":"$step.map_group","map_number":"$step.map_number","tile_x":"$step.tile_x","tile_y":"$step.tile_y"}', 0, 17, 'ROUTE102', NULL, 39, 5, NULL, NULL),
         ('mission-003-reach-route102', 'fill-party', 10, 'Capturar até formar equipe com seis combatentes', NULL,

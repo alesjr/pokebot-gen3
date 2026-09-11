@@ -10,7 +10,7 @@ from modules.campaign import (
     save_campaign_checkpoint,
 )
 from modules.campaign.capabilities import CampaignCapabilityResolver, campaign_capability
-from modules.campaign.rse import run_deposit_party_shinies
+from modules.campaign.rse import run_organize_party_at_pc
 from modules.battle_state import BattleOutcome, EncounterType
 from modules.battle_strategies import BattleStrategy
 from modules.clock import reach_bedroom_clock, set_clock
@@ -53,6 +53,8 @@ class CampaignMode(BotMode):
         self._pending_shiny_personality: int | None = None
         self._shiny_deposit_pending = False
         self._defer_shiny_deposit = False
+        self._required_hms: list[str] = []
+        self._temporary_required_species: list[str] = []
         self._trainer_name = context.profile.trainer_name or os.environ.get("POKEBOT_CAMPAIGN_TRAINER_NAME", "Alesjr")
         self._trainer_gender = context.profile.trainer_gender
         self._starter = context.profile.starter or os.environ.get("POKEBOT_CAMPAIGN_STARTER", "Mudkip")
@@ -284,7 +286,18 @@ class CampaignMode(BotMode):
         self._active_capability = None
         try:
             yield from heal_in_pokemon_center(find_closest_pokemon_center())
-            yield from run_deposit_party_shinies(*terminal_tile)
+            yield from run_organize_party_at_pc(
+                *terminal_tile,
+                storage_required=bool(
+                    self._campaign_rules.get("shiny.storage_required", True)
+                ),
+                optimize_party=bool(
+                    self._campaign_rules.get("party.optimize_on_pc_access", True)
+                ),
+                target_size=int(self._campaign_rules.get("party.target_size", 6)),
+                required_hms=self._required_hms,
+                temporary_required_species=self._temporary_required_species,
+            )
             self._shiny_deposit_pending = False
             yield from navigate_to_catalog_location(
                 source_map.value[0],
@@ -296,6 +309,10 @@ class CampaignMode(BotMode):
             self._active_capability = previous
 
     def _on_step_started(self, step) -> None:
+        self._required_hms = list(step.action_params.get("required_hms", []))
+        self._temporary_required_species = list(
+            step.action_params.get("temporary_required_species", [])
+        )
         location = ""
         if step.map_name is not None:
             location = f" @ {step.map_name}"

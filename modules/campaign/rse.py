@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Generator
 
 from modules.campaign.engine import save_campaign_checkpoint
+from modules.campaign.team import pokemon_identity, select_campaign_party
 from modules.context import context
 from modules.items import get_item_bag, get_item_by_name
 from modules.keyboard import get_naming_screen_data, type_in_naming_screen
@@ -31,7 +32,9 @@ from modules.player import (
     get_player_location,
     player_avatar_is_controllable,
 )
+from modules.pokemon import Pokemon
 from modules.pokemon_party import get_party
+from modules.pokemon_storage import get_pokemon_storage
 from modules.tasks import get_global_script_context, get_task
 
 
@@ -245,17 +248,68 @@ def run_leave_birch_lab(*, timeout_frames: int = 30_000) -> Generator:
     raise BotModeError(f"Cannot leave Birch's lab from {get_player_location()[0].name}.")
 
 
-def run_deposit_party_shinies(
+def _pc_action_batches(
+    selected: list[Pokemon], storage_required: bool
+) -> list[list[PCAction]]:
+    party = list(get_party())
+    selected_ids = {pokemon_identity(pokemon) for pokemon in selected}
+    if not storage_required:
+        selected_ids.update(
+            pokemon_identity(pokemon) for pokemon in party if pokemon.is_shiny
+        )
+    outgoing = [
+        pokemon for pokemon in party if pokemon_identity(pokemon) not in selected_ids
+    ]
+    party_ids = {pokemon_identity(pokemon) for pokemon in party}
+    incoming = [
+        pokemon for pokemon in selected if pokemon_identity(pokemon) not in party_ids
+    ]
+
+    protected = None
+    remaining = [pokemon for pokemon in party if pokemon not in outgoing]
+    if outgoing and not any(not pokemon.is_egg and pokemon.current_hp > 0 for pokemon in remaining):
+        protected = next(
+            (
+                pokemon
+                for pokemon in outgoing
+                if not pokemon.is_egg and pokemon.current_hp > 0
+            ),
+            outgoing[-1],
+        )
+
+    first_outgoing = [pokemon for pokemon in outgoing if pokemon is not protected]
+    first_capacity = 6 - (len(party) - len(first_outgoing))
+    first_incoming = incoming[:first_capacity]
+    first_batch = [PCAction.deposit_pokemon_to_box(pokemon) for pokemon in first_outgoing]
+    first_batch.extend(
+        PCAction.withdraw_pokemon_from_box(pokemon) for pokemon in first_incoming
+    )
+
+    batches = [first_batch] if first_batch else []
+    remaining_incoming = incoming[len(first_incoming) :]
+    party_size_after_first_batch = len(party) - len(first_outgoing) + len(first_incoming)
+    if protected is not None and (
+        remaining_incoming or party_size_after_first_batch > 1
+    ):
+        batches.append(
+            [PCAction.deposit_pokemon_to_box(protected)]
+            + [
+                PCAction.withdraw_pokemon_from_box(pokemon)
+                for pokemon in remaining_incoming
+            ]
+        )
+    return batches
+
+
+def run_organize_party_at_pc(
     tile_x: int,
     tile_y: int,
     storage_required: bool = True,
+    optimize_party: bool = True,
+    target_size: int = 6,
+    required_hms: list[str] | None = None,
+    temporary_required_species: list[str] | None = None,
 ) -> Generator:
-    if not storage_required:
-        return
-    shinies = [pokemon for pokemon in get_party().non_eggs if pokemon.is_shiny]
-    if not shinies:
-        return
-
     destination_map = get_player_location()[0]
     if not destination_map.name.endswith("POKEMON_CENTER_1F"):
         raise BotModeError(
@@ -264,9 +318,21 @@ def run_deposit_party_shinies(
 
     yield from navigate_to(destination_map, (tile_x, tile_y))
     yield from ensure_facing_direction("Up")
-    yield from interact_with_pc(
-        [PCAction.deposit_pokemon_to_box(pokemon) for pokemon in shinies]
+    party = list(get_party())
+    stored = [slot.pokemon for box in get_pokemon_storage().boxes for slot in box.slots]
+    selected = (
+        select_campaign_party(
+            party,
+            stored,
+            target_size=target_size,
+            required_hms=required_hms or (),
+            temporary_required_species=temporary_required_species or (),
+        )
+        if optimize_party
+        else [pokemon for pokemon in party if not pokemon.is_shiny]
     )
+    for actions in _pc_action_batches(selected, storage_required):
+        yield from interact_with_pc(actions)
     yield from navigate_to(destination_map, (7, 8))
     yield from walk_through_warp(destination_map, "Down", target_x=7)
     yield from wait_for_player_avatar_to_be_controllable(
