@@ -1,0 +1,80 @@
+Revisão honesta do fluxo atual:
+
+  ### Missão 1 — Starter shiny
+
+  1. Inicia novo jogo.
+  2. Configura relógio.
+  3. Encontra rival.
+  4. Vai até bolsa na Route 101.
+  5. Salva jogo antes da escolha.
+  6. Usa fluxo existente run_rse_hoenn(..., stop_on_shiny=True).
+  7. Faz soft-reset até starter configurado ser shiny.
+  8. Finaliza resgate do Birch.
+  9. Salva jogo e checkpoint.
+
+  Conclusão lida do save:
+
+  - SYS_POKEMON_GET;
+  - RESCUED_BIRCH;
+  - BIRCH_LAB_STATE >= 3;
+  - starter shiny configurado na party ou PC.
+
+  ### Missão 2 — Primeiras Poké Balls
+
+  1. Exige starter shiny e flags da missão 1.
+  2. Se starter estiver ferido, cura em Oldale.
+  3. Vai até Route 103.
+  4. Enfrenta rival usando sistema normal de batalha.
+  5. Confirma DEFEATED_RIVAL_ROUTE103.
+  6. Volta ao laboratório.
+  7. Recebe Pokédex e Poké Balls.
+  8. Salva jogo e checkpoint.
+
+  Conclusão lida do save:
+
+  - SYS_POKEDEX_GET;
+  - BIRCH_LAB_STATE >= 5.
+
+  Quantidade de Poké Balls não faz parte da conclusão final, permitindo reconhecer missão 2 depois que bolas forem gastas.
+
+  ### Missão 3 — Route 102, captura e treino
+
+  1. Sai do laboratório.
+  2. Recebe Running Shoes.
+  3. Entra na Route 101.
+  4. Passa por Oldale.
+  5. Entra na Route 102.
+  6. Vai até grama (39, 5).
+  7. Usa PokecenterLoopController e captura existente.
+  8. Gasta todas Poké Balls.
+  9. Exige mínimo de 2 Pokémon fora família do starter.
+  10. Se terminar bolas com menos de 2, soft-reset para save pré-captura e tenta novamente.
+  11. Volta ao Centro de Oldale.
+  12. Cura party.
+  13. Deposita starter shiny no PC.
+  14. Volta à grama da Route 102.
+  15. Usa EVTrainMode.
+  16. Treina toda party restante até nível 20.
+  17. Salva jogo e checkpoint.
+
+  Conclusão lida do save:
+
+  - party com pelo menos 2 Pokémon;
+  - nível mínimo da party >= 20;
+  - starter shiny confirmado no storage.
+
+  ### Batalhas e cura
+
+  Durante ações protegidas da missão 3:
+  - BattleListener recebe DefaultBattleStrategy;
+  - BattleListener chama modules/battle_handler.py;
+  - após batalha, policy solicita cura;
+  - whiteout solicita Centro Pokémon, EV Train e repetição do trajeto;
+  Captura usa BattleAction.Catch. Treino usa estratégia própria do EVTrainMode.
+
+  ### Problemas reais encontrados
+  Ainda existem dois riscos:
+
+  - Se última Poké Ball falhar e batalha continuar, CatchStrategy existente muda para Manual antes do loop conseguir executar soft-reset.
+  - Pokémon inicial sem golpe reconhecido como ofensivo, como Seedot usando apenas Bide, pode fazer estratégia existente parar caso não exista parceiro
+  Portanto: catálogo e conclusão estão corretos. Integração com battle_handler está correta. Esses dois casos de borda ainda podem interromper execução.

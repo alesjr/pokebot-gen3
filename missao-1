@@ -1,0 +1,177 @@
+1. CampaignMode.run()
+
+  - Abre stats/missions.db.
+  - Chama MissionsDatabase.initialize_builtin_catalog().
+  - Busca primeira missão incompleta com mission_plans(game_code).
+  - CampaignExecutor.is_complete() consulta condições reais do save.
+  - Não grava missão como concluída. Conclusão sempre recalculada pelo save.
+
+  2. Passo new-game
+
+  Chamada:
+
+  CampaignMode._new_game_intro()
+  └── run_new_game_intro(nome, gênero)
+
+  Faz:
+
+  - inicia novo jogo;
+  - escolhe personagem masculino;
+  - informa nome configurado;
+  - avança introdução;
+  - aguarda controle do personagem.
+
+  Condição no banco:
+
+  other:game_started = true
+
+  3. Passo set-bedroom-clock
+
+  Chamada:
+
+  CampaignMode._set_bedroom_clock()
+  └── run_clock_setup(gênero)
+
+  Faz:
+
+  - navega dentro da casa;
+  - sobe para quarto;
+  - posiciona diante do relógio;
+  - configura relógio;
+  - avança diálogos até recuperar controle.
+
+  Condição no banco:
+
+  flag:SET_WALL_CLOCK = set
+
+  4. Passo meet-rival
+
+  Chamada:
+
+  CampaignMode._meet_rival()
+  └── run_meet_rival(gênero)
+
+  Faz:
+
+  - sai da casa;
+  - entra na casa do rival;
+  - sobe ao quarto;
+  - interage com rival;
+  - espera evento terminar.
+
+  Diferença Ruby/Sapphire/Emerald: coordenada do rival vem do catálogo.
+
+  Condição no banco:
+
+  var:LITTLEROOT_RIVAL_STATE >= 3
+
+  5. Passo reach-starter-bag
+
+  Chamada:
+
+  run_reach_starter_bag()
+
+  Faz:
+
+  - sai da casa do rival;
+  - atravessa Littleroot;
+  - entra na Route 101;
+  - navega até diante da bolsa;
+  - vira para bolsa;
+  - confirma estado do evento.
+
+  Condição no banco:
+
+  var:ROUTE101_STATE >= 2
+
+  6. Passo choose-starter
+
+  Chamada principal:
+
+  CampaignMode._choose_starter()
+
+  Fluxo:
+
+  CartridgeStateReader.read(
+      "other",
+      "owns_configured_shiny_starter"
+  )
+
+  Se shiny configurado já existe:
+
+  - não executa busca novamente;
+  - segue para conclusão do evento.
+
+  Se shiny ainda não existe:
+
+  run_reach_starter_bag()
+
+  Garante posição diante da bolsa.
+
+  Se starter ainda não foi recebido:
+
+  save_the_game()
+
+  Cria save normal antes das tentativas.
+
+  Depois:
+
+  StartersMode.run()
+  └── run_rse_hoenn(
+          callback_do_encontro,
+          starter_configurado,
+          stop_on_shiny=True
+      )
+
+  Cada tentativa dentro de run_rse_hoenn():
+
+  1. soft_reset(mash_random_keys=True);
+  2. confirma posição diante da bolsa;
+  3. abre bolsa;
+  4. seleciona Treecko, Torchic ou Mudkip configurado;
+  5. chama wait_for_unique_rng_value();
+  6. inicia batalha contra Poochyena;
+  7. espera starter aparecer;
+  8. obtém encontro pelo callback de StartersMode.on_battle_started();
+  9. chama handle_encounter(...);
+  10. se não for shiny, loop volta ao soft_reset;
+  11. se for shiny, retorna ao Campaign.
+  12. Finalização após shiny
+
+  Chamada:
+
+  run_finish_starter_sequence()
+
+  Faz:
+
+  - avança batalha e evento de resgate;
+  - espera chegada ao laboratório;
+  - verifica:
+
+  flag:SYS_POKEMON_GET
+  flag:RESCUED_BIRCH
+
+  - termina diálogos do laboratório com _finish_starter_lab();
+  - salva jogo com _save_campaign_checkpoint(1);
+  - cria save state Campaign_Mission_1.
+
+  8. Validação final pelo CampaignExecutor
+
+  Condições da etapa final:
+
+  flag:SYS_POKEMON_GET = set
+  flag:RESCUED_BIRCH = set
+  var:BIRCH_LAB_STATE >= 3
+  other:owns_configured_shiny_starter = true
+
+  Todas precisam estar verdadeiras.
+
+  Depois:
+
+  CampaignExecutor.update_progress(
+      status="available",
+      current_step_id=None
+  )
+
+  Isso não marca missão como concluída. Próxima leitura considera missão 1
+  concluída somente enquanto condições reais do save continuarem satisfeitas.

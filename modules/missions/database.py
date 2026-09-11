@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
+CATALOG_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,9 @@ class MissionStep:
     step_order: int
     name: str
     action: str
+    action_params: dict[str, object]
+    recovery_action: str | None
+    recovery_params: dict[str, object]
     map_group: int | None
     map_number: int | None
     map_name: str | None
@@ -45,11 +50,29 @@ class MissionPlan:
     code: str
     name: str
     game_code: str
+    rules: dict[str, object]
     steps: tuple[MissionStep, ...]
 
 
 def _timestamp() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
+def _decode_mapping(value: str, field: str) -> dict[str, object]:
+    decoded = json.loads(value)
+    if not isinstance(decoded, dict):
+        raise RuntimeError(f"{field} must contain a JSON object")
+    return decoded
+
+
+def _decode_rule_value(value: str, value_type: str) -> object:
+    if value_type == "integer":
+        return int(value)
+    if value_type == "boolean":
+        return value.lower() == "true"
+    if value_type == "json":
+        return json.loads(value)
+    return value
 
 
 class MissionsDatabase:
@@ -77,7 +100,7 @@ class MissionsDatabase:
             "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL CHECK(version > 0))"
         )
         existing = self._connection.execute("SELECT version FROM schema_version").fetchone()
-        if existing is not None and existing[0] not in {1, 2, 3, 4, 5, SCHEMA_VERSION}:
+        if existing is not None and existing[0] not in {1, 2, 3, 4, 5, 6, SCHEMA_VERSION}:
             raise RuntimeError(
                 f"missions database schema version {existing[0]} is not supported; "
                 f"expected {SCHEMA_VERSION}"
@@ -129,7 +152,10 @@ class MissionsDatabase:
                 step_order INTEGER NOT NULL CHECK(step_order > 0),
                 name TEXT NOT NULL,
                 description TEXT,
-                action TEXT,
+                action TEXT NOT NULL,
+                action_params TEXT NOT NULL DEFAULT '{}',
+                recovery_action TEXT,
+                recovery_params TEXT NOT NULL DEFAULT '{}',
                 map_group INTEGER CHECK(map_group >= 0),
                 map_number INTEGER CHECK(map_number >= 0),
                 map_name TEXT,
@@ -191,6 +217,19 @@ class MissionsDatabase:
                 UNIQUE(mission_progress_id, step_condition_id)
             );
 
+            CREATE TABLE IF NOT EXISTS campaign_rules (
+                id INTEGER PRIMARY KEY,
+                game_id INTEGER NOT NULL,
+                rule_key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                value_type TEXT NOT NULL DEFAULT 'text' CHECK(value_type IN (
+                    'integer', 'boolean', 'text', 'json'
+                )),
+                description TEXT,
+                FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE,
+                UNIQUE(game_id, rule_key)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_mission_games_game
                 ON mission_games(game_id, sequence);
             CREATE INDEX IF NOT EXISTS idx_mission_steps_order
@@ -199,9 +238,11 @@ class MissionsDatabase:
                 ON step_conditions(source_type, source_key);
             CREATE INDEX IF NOT EXISTS idx_mission_progress_profile_status
                 ON mission_progress(profile, status);
+            CREATE INDEX IF NOT EXISTS idx_campaign_rules_game
+                ON campaign_rules(game_id, rule_key);
 
             INSERT INTO schema_version(version)
-            SELECT 3 WHERE NOT EXISTS (SELECT 1 FROM schema_version);
+            SELECT 7 WHERE NOT EXISTS (SELECT 1 FROM schema_version);
 
             COMMIT;
             """
@@ -217,6 +258,9 @@ class MissionsDatabase:
         if version in {3, 4, 5}:
             self._remove_battle_policies_to_v6()
             version = 6
+        if version == 6:
+            self._migrate_catalog_to_v7()
+            version = 7
         if version != SCHEMA_VERSION:
             raise RuntimeError(
                 f"missions database schema version {version} is not supported; expected {SCHEMA_VERSION}"
@@ -228,6 +272,35 @@ class MissionsDatabase:
             BEGIN IMMEDIATE;
             DROP TABLE IF EXISTS mission_battle_policies;
             UPDATE schema_version SET version = 6;
+            COMMIT;
+            """
+        )
+
+    def _migrate_catalog_to_v7(self) -> None:
+        self._connection.executescript(
+            """
+            BEGIN IMMEDIATE;
+            ALTER TABLE mission_steps
+                ADD COLUMN action_params TEXT NOT NULL DEFAULT '{}';
+            ALTER TABLE mission_steps
+                ADD COLUMN recovery_action TEXT;
+            ALTER TABLE mission_steps
+                ADD COLUMN recovery_params TEXT NOT NULL DEFAULT '{}';
+            CREATE TABLE IF NOT EXISTS campaign_rules (
+                id INTEGER PRIMARY KEY,
+                game_id INTEGER NOT NULL,
+                rule_key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                value_type TEXT NOT NULL DEFAULT 'text' CHECK(value_type IN (
+                    'integer', 'boolean', 'text', 'json'
+                )),
+                description TEXT,
+                FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE,
+                UNIQUE(game_id, rule_key)
+            );
+            CREATE INDEX IF NOT EXISTS idx_campaign_rules_game
+                ON campaign_rules(game_id, rule_key);
+            UPDATE schema_version SET version = 7;
             COMMIT;
             """
         )
@@ -305,729 +378,9 @@ class MissionsDatabase:
             raise RuntimeError(f"missions database foreign key violation: {tuple(violation)}")
 
     def initialize_builtin_catalog(self) -> None:
-        """Insert missing built-in catalogue rows without overwriting database edits."""
-        games = (
-            ("ruby", "Ruby", "AXV", 2),
-            ("sapphire", "Sapphire", "AXP", 2),
-            ("emerald", "Emerald", "BPE", 0),
-            ("firered", "FireRed", "BPR", 1),
-            ("leafgreen", "LeafGreen", "BPG", 1),
-        )
-        self._connection.execute("BEGIN IMMEDIATE")
-        try:
-            self._connection.executemany(
-                """
-                INSERT INTO games(code, name, game_code, revision) VALUES (?, ?, ?, ?)
-                ON CONFLICT(code) DO NOTHING
-                """,
-                games,
-            )
-            self._connection.execute(
-                """
-                INSERT INTO missions(code, name, description, category, sequence)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(code) DO NOTHING
-                """,
-                (
-                    "mission-001-first-starter",
-                    "Missão 1 - Obter o primeiro starter shiny",
-                    "Inicia o jogo, conclui eventos de Littleroot e obtém o starter shiny configurado.",
-                    "main_story",
-                    1,
-                ),
-            )
-            self._connection.execute(
-                """
-                UPDATE missions
-                SET name = 'Missão 1 - Obter o primeiro starter shiny',
-                    description = 'Inicia o jogo, conclui eventos de Littleroot e obtém o starter shiny configurado.'
-                WHERE code = 'mission-001-first-starter'
-                  AND name = 'Missão 1 - Obter o primeiro starter'
-                """
-            )
-            mission_id = self._connection.execute(
-                "SELECT id FROM missions WHERE code = 'mission-001-first-starter'"
-            ).fetchone()[0]
-
-            for game_code, *_ in games[:3]:
-                game_id = self._connection.execute(
-                    "SELECT id FROM games WHERE code = ?", (game_code,)
-                ).fetchone()[0]
-                self._connection.execute(
-                    """
-                    INSERT INTO mission_games(mission_id, game_id, sequence) VALUES (?, ?, 1)
-                    ON CONFLICT(mission_id, game_id) DO NOTHING
-                    """,
-                    (mission_id, game_id),
-                )
-                mission_game_id = self._connection.execute(
-                    "SELECT id FROM mission_games WHERE mission_id = ? AND game_id = ?",
-                    (mission_id, game_id),
-                ).fetchone()[0]
-                self._seed_first_starter_steps(mission_game_id, game_code)
-
-            self._connection.execute(
-                """
-                INSERT INTO missions(code, name, description, category, sequence)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(code) DO NOTHING
-                """,
-                (
-                    "mission-002-first-poke-balls",
-                    "Missão 2 - Receber as primeiras Poké Balls",
-                    "Derrota o rival na Route 103 e recebe a Pokédex e as primeiras Poké Balls.",
-                    "main_story",
-                    2,
-                ),
-            )
-            second_mission_id = self._connection.execute(
-                "SELECT id FROM missions WHERE code = 'mission-002-first-poke-balls'"
-            ).fetchone()[0]
-            for game_code, *_ in games[:3]:
-                game_id = self._connection.execute(
-                    "SELECT id FROM games WHERE code = ?", (game_code,)
-                ).fetchone()[0]
-                self._connection.execute(
-                    """
-                    INSERT INTO mission_games(mission_id, game_id, sequence) VALUES (?, ?, 2)
-                    ON CONFLICT(mission_id, game_id) DO NOTHING
-                    """,
-                    (second_mission_id, game_id),
-                )
-                mission_game_id = self._connection.execute(
-                    "SELECT id FROM mission_games WHERE mission_id = ? AND game_id = ?",
-                    (second_mission_id, game_id),
-                ).fetchone()[0]
-                self._seed_first_poke_balls_steps(mission_game_id, game_code)
-
-            self._connection.execute(
-                """
-                INSERT INTO missions(code, name, description, category, sequence)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(code) DO NOTHING
-                """,
-                (
-                    "mission-003-reach-route102",
-                    "Missão 3 - Chegar à primeira rota",
-                    "Sai de Littleroot, recebe os Running Shoes e chega à Route 102.",
-                    "main_story",
-                    3,
-                ),
-            )
-            third_mission_id = self._connection.execute(
-                "SELECT id FROM missions WHERE code = 'mission-003-reach-route102'"
-            ).fetchone()[0]
-            self._connection.execute(
-                """
-                UPDATE missions
-                SET description = 'Chega à Route 102 e usa as primeiras Poké Balls para capturar novas espécies.'
-                WHERE id = ?
-                  AND description = 'Sai de Littleroot, recebe os Running Shoes e chega à Route 102.'
-                """,
-                (third_mission_id,),
-            )
-            for game_code, *_ in games[:3]:
-                game_id = self._connection.execute(
-                    "SELECT id FROM games WHERE code = ?", (game_code,)
-                ).fetchone()[0]
-                self._connection.execute(
-                    """
-                    INSERT INTO mission_games(mission_id, game_id, sequence) VALUES (?, ?, 3)
-                    ON CONFLICT(mission_id, game_id) DO NOTHING
-                    """,
-                    (third_mission_id, game_id),
-                )
-                mission_game_id = self._connection.execute(
-                    "SELECT id FROM mission_games WHERE mission_id = ? AND game_id = ?",
-                    (third_mission_id, game_id),
-                ).fetchone()[0]
-                self._seed_reach_route102_steps(mission_game_id, game_code)
-            self._connection.commit()
-        except BaseException:
-            self._connection.rollback()
-            raise
-
-    def _seed_first_starter_steps(self, mission_game_id: int, game_code: str) -> None:
-        rival_tile = (5, 5) if game_code == "emerald" else (7, 3)
-        steps = (
-            ("new-game", 1, "Iniciar novo jogo", "new_game_intro", None, None, None, None, None, None),
-            (
-                "set-bedroom-clock",
-                2,
-                "Ajustar relógio do quarto",
-                "set_bedroom_clock",
-                1,
-                1,
-                "LITTLEROOT_TOWN_BRENDANS_HOUSE_2F",
-                "Littleroot Town",
-                5,
-                2,
-            ),
-            (
-                "meet-rival",
-                3,
-                "Encontrar rival",
-                "meet_rival",
-                1,
-                3,
-                "LITTLEROOT_TOWN_MAYS_HOUSE_2F",
-                "Littleroot Town",
-                rival_tile[0],
-                rival_tile[1],
-            ),
-            (
-                "reach-starter-bag",
-                4,
-                "Chegar à bolsa do Professor Birch",
-                "reach_starter_bag",
-                0,
-                16,
-                "ROUTE101",
-                None,
-                7,
-                15,
-            ),
-            (
-                "choose-starter",
-                5,
-                "Obter starter shiny configurado",
-                "choose_starter",
-                0,
-                16,
-                "ROUTE101",
-                None,
-                7,
-                15,
-            ),
-        )
-        for code, order, name, action, map_group, map_number, map_name, city, tile_x, tile_y in steps:
-            self._connection.execute(
-                """
-                INSERT INTO mission_steps(
-                    mission_game_id, code, step_order, name, action,
-                    map_group, map_number, map_name, city, tile_x, tile_y
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(mission_game_id, code) DO NOTHING
-                """,
-                (
-                    mission_game_id,
-                    code,
-                    order,
-                    name,
-                    action,
-                    map_group,
-                    map_number,
-                    map_name,
-                    city,
-                    tile_x,
-                    tile_y,
-                ),
-            )
-
-        self._connection.execute(
-            """
-            UPDATE mission_steps
-            SET name = 'Obter starter shiny configurado'
-            WHERE mission_game_id = ?
-              AND code = 'choose-starter'
-              AND name = 'Obter starter configurado'
-            """,
-            (mission_game_id,),
-        )
-        conditions = {
-            "new-game": (("other", "game_started", "=", "true", "boolean"),),
-            "set-bedroom-clock": (("flag", "SET_WALL_CLOCK", "set", "true", "boolean"),),
-            "meet-rival": (("var", "LITTLEROOT_RIVAL_STATE", ">=", "3", "integer"),),
-            "reach-starter-bag": (("var", "ROUTE101_STATE", ">=", "2", "integer"),),
-            "choose-starter": (
-                ("flag", "SYS_POKEMON_GET", "set", "true", "boolean"),
-                ("flag", "RESCUED_BIRCH", "set", "true", "boolean"),
-                ("var", "BIRCH_LAB_STATE", ">=", "3", "integer"),
-                ("other", "owns_configured_shiny_starter", "=", "true", "boolean"),
-            ),
-        }
-        for step_code, entries in conditions.items():
-            step_id = self._connection.execute(
-                "SELECT id FROM mission_steps WHERE mission_game_id = ? AND code = ?",
-                (mission_game_id, step_code),
-            ).fetchone()[0]
-            for source_type, source_key, operator, expected_value, value_type in entries:
-                self._connection.execute(
-                    """
-                    INSERT INTO step_conditions(
-                        step_id, purpose, condition_group, source_type, source_key,
-                        operator, expected_value, value_type
-                    ) VALUES (?, 'complete', 1, ?, ?, ?, ?, ?)
-                    ON CONFLICT(
-                        step_id, purpose, condition_group, source_type,
-                        source_key, operator, expected_value
-                    ) DO NOTHING
-                    """,
-                    (step_id, source_type, source_key, operator, expected_value, value_type),
-                )
-
-    def _seed_first_poke_balls_steps(self, mission_game_id: int, game_code: str) -> None:
-        rival_tile = (9, 3) if game_code == "emerald" else (10, 3)
-        steps = (
-            (
-                "defeat-route103-rival",
-                1,
-                "Derrotar rival na Route 103",
-                "defeat_route103_rival",
-                0,
-                18,
-                "ROUTE103",
-                rival_tile[0],
-                rival_tile[1],
-            ),
-            (
-                "receive-first-poke-balls",
-                2,
-                "Receber Pokédex e primeiras Poké Balls",
-                "receive_first_poke_balls",
-                1,
-                4,
-                "LITTLEROOT_TOWN_PROFESSOR_BIRCHS_LAB",
-                None,
-                None,
-            ),
-        )
-        for code, order, name, action, map_group, map_number, map_name, tile_x, tile_y in steps:
-            self._connection.execute(
-                """
-                INSERT INTO mission_steps(
-                    mission_game_id, code, step_order, name, action,
-                    map_group, map_number, map_name, tile_x, tile_y
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(mission_game_id, code) DO NOTHING
-                """,
-                (
-                    mission_game_id,
-                    code,
-                    order,
-                    name,
-                    action,
-                    map_group,
-                    map_number,
-                    map_name,
-                    tile_x,
-                    tile_y,
-                ),
-            )
-
-        conditions = {
-            "defeat-route103-rival": (
-                ("unlock", "flag", "SYS_POKEMON_GET", "set", "true", "boolean"),
-                ("unlock", "flag", "RESCUED_BIRCH", "set", "true", "boolean"),
-                ("unlock", "var", "BIRCH_LAB_STATE", ">=", "3", "integer"),
-                (
-                    "unlock",
-                    "other",
-                    "owns_configured_shiny_starter",
-                    "=",
-                    "true",
-                    "boolean",
-                ),
-                ("complete", "flag", "DEFEATED_RIVAL_ROUTE103", "set", "true", "boolean"),
-            ),
-            "receive-first-poke-balls": (
-                ("unlock", "flag", "DEFEATED_RIVAL_ROUTE103", "set", "true", "boolean"),
-                ("complete", "flag", "SYS_POKEDEX_GET", "set", "true", "boolean"),
-                ("complete", "var", "BIRCH_LAB_STATE", ">=", "5", "integer"),
-            ),
-        }
-        for step_code, entries in conditions.items():
-            step_id = self._connection.execute(
-                "SELECT id FROM mission_steps WHERE mission_game_id = ? AND code = ?",
-                (mission_game_id, step_code),
-            ).fetchone()[0]
-            for purpose, source_type, source_key, operator, expected_value, value_type in entries:
-                self._connection.execute(
-                    """
-                    INSERT INTO step_conditions(
-                        step_id, purpose, condition_group, source_type, source_key,
-                        operator, expected_value, value_type
-                    ) VALUES (?, ?, 1, ?, ?, ?, ?, ?)
-                    ON CONFLICT(
-                        step_id, purpose, condition_group, source_type,
-                        source_key, operator, expected_value
-                    ) DO NOTHING
-                    """,
-                    (
-                        step_id,
-                        purpose,
-                        source_type,
-                        source_key,
-                        operator,
-                        expected_value,
-                        value_type,
-                    ),
-                )
-
-        receive_step_id = self._connection.execute(
-            """
-            SELECT id FROM mission_steps
-            WHERE mission_game_id = ? AND code = 'receive-first-poke-balls'
-            """,
-            (mission_game_id,),
-        ).fetchone()[0]
-        self._connection.execute(
-            """
-            DELETE FROM step_conditions
-            WHERE step_id = ? AND purpose = 'complete'
-              AND source_type = 'item' AND source_key = 'Poké Ball'
-              AND operator = '>=' AND expected_value = '1'
-            """,
-            (receive_step_id,),
-        )
-
-    def _seed_reach_route102_steps(self, mission_game_id: int, game_code: str) -> None:
-        first_gym_max_level = {"ruby": 15, "sapphire": 15, "emerald": 15}[game_code]
-        training_level_margin = 5
-        training_target_level = first_gym_max_level + training_level_margin
-        legacy_step = self._connection.execute(
-            """
-            SELECT id FROM mission_steps
-            WHERE mission_game_id = ? AND code = 'reach-route102'
-              AND action = 'reach_route102' AND step_order = 1
-            """,
-            (mission_game_id,),
-        ).fetchone()
-        if legacy_step is not None:
-            self._connection.execute(
-                "UPDATE mission_progress SET current_step_id = NULL WHERE current_step_id = ?",
-                (legacy_step[0],),
-            )
-            self._connection.execute("DELETE FROM mission_steps WHERE id = ?", (legacy_step[0],))
-
-        steps = (
-            (
-                "leave-birch-lab",
-                1,
-                "Sair do laboratório do Professor Birch",
-                "leave_birch_lab",
-                0,
-                9,
-                "LITTLEROOT_TOWN",
-                7,
-                16,
-            ),
-            (
-                "reach-route101",
-                2,
-                "Receber Running Shoes e entrar na Route 101",
-                "navigate_to_catalog_location",
-                0,
-                16,
-                "ROUTE101",
-                10,
-                19,
-            ),
-            (
-                "reach-oldale",
-                3,
-                "Atravessar a Route 101 até Oldale",
-                "navigate_to_catalog_location",
-                0,
-                10,
-                "OLDALE_TOWN",
-                10,
-                18,
-            ),
-            (
-                "reach-route102",
-                4,
-                "Chegar à Route 102",
-                "reach_route102",
-                0,
-                17,
-                "ROUTE102",
-                49,
-                10,
-            ),
-            (
-                "reach-route102-grass",
-                5,
-                "Entrar na grama da Route 102",
-                "navigate_to_catalog_location",
-                0,
-                17,
-                "ROUTE102",
-                39,
-                5,
-            ),
-            (
-                "catch-new-route102-pokemon",
-                6,
-                "Gastar as primeiras Poké Balls capturando novas espécies",
-                "catch_new_route102_pokemon",
-                0,
-                17,
-                "ROUTE102",
-                39,
-                5,
-            ),
-            (
-                "heal-captured-pokemon-oldale",
-                7,
-                "Curar equipe no Centro Pokémon de Oldale",
-                "heal_captured_pokemon_oldale",
-                0,
-                10,
-                "OLDALE_TOWN",
-                6,
-                16,
-            ),
-            (
-                "deposit-shiny-starter",
-                8,
-                "Depositar starter shiny no PC",
-                "deposit_shiny_starter",
-                2,
-                2,
-                "OLDALE_TOWN_POKEMON_CENTER_1F",
-                10,
-                2,
-            ),
-            (
-                "return-route102-grass",
-                9,
-                "Voltar para a grama da Route 102",
-                "navigate_to_catalog_location",
-                0,
-                17,
-                "ROUTE102",
-                39,
-                5,
-            ),
-            (
-                "ev-train-captured-pokemon",
-                10,
-                f"Treinar capturados até o nível {training_target_level}",
-                "ev_train_captured_pokemon",
-                0,
-                17,
-                "ROUTE102",
-                39,
-                5,
-            ),
-        )
-        for code, order, name, action, map_group, map_number, map_name, tile_x, tile_y in steps:
-            self._connection.execute(
-                """
-                INSERT INTO mission_steps(
-                    mission_game_id, code, step_order, name, action,
-                    map_group, map_number, map_name, tile_x, tile_y
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(mission_game_id, code) DO NOTHING
-                """,
-                (
-                    mission_game_id,
-                    code,
-                    order,
-                    name,
-                    action,
-                    map_group,
-                    map_number,
-                    map_name,
-                    tile_x,
-                    tile_y,
-                ),
-            )
-
-        self._connection.execute(
-            """
-            UPDATE mission_steps
-            SET tile_x = 49, tile_y = 10
-            WHERE mission_game_id = ? AND code = 'reach-route102'
-              AND action = 'reach_route102' AND tile_x = 40 AND tile_y = 9
-            """,
-            (mission_game_id,),
-        )
-        self._connection.execute(
-            """
-            UPDATE mission_steps
-            SET tile_x = 39, tile_y = 5
-            WHERE mission_game_id = ?
-              AND code IN ('reach-route102-grass', 'catch-new-route102-pokemon')
-              AND tile_x = 36 AND tile_y IN (4, 5)
-            """,
-            (mission_game_id,),
-        )
-        self._connection.execute(
-            """
-            UPDATE mission_steps
-            SET tile_x = 10, tile_y = 2
-            WHERE mission_game_id = ? AND code = 'deposit-shiny-starter'
-              AND (
-                  (tile_x IN (9, 10, 11) AND tile_y IN (3, 4))
-                  OR (tile_x IN (9, 11) AND tile_y = 2)
-              )
-            """,
-            (mission_game_id,),
-        )
-        self._connection.execute(
-            """
-            UPDATE step_conditions
-            SET expected_value = '39:5'
-            WHERE source_type = 'tile' AND source_key = 'current'
-              AND expected_value IN ('36:4', '36:5')
-              AND step_id IN (
-                  SELECT id FROM mission_steps
-                  WHERE mission_game_id = ? AND code = 'reach-route102-grass'
-              )
-            """,
-            (mission_game_id,),
-        )
-        self._connection.execute(
-            """
-            UPDATE mission_steps
-            SET description = ?
-            WHERE mission_game_id = ? AND code = 'ev-train-captured-pokemon'
-              AND description IS NULL
-            """,
-            (
-                f"first_gym_max_level={first_gym_max_level}; "
-                f"level_margin={training_level_margin}; "
-                f"target_level={training_target_level}",
-                mission_game_id,
-            ),
-        )
-
-        capture_step_id = self._connection.execute(
-            """
-            SELECT id FROM mission_steps
-            WHERE mission_game_id = ? AND code = 'catch-new-route102-pokemon'
-            """,
-            (mission_game_id,),
-        ).fetchone()[0]
-        self._connection.execute(
-            """
-            DELETE FROM step_conditions
-            WHERE step_id = ? AND purpose = 'complete'
-              AND source_type = 'other' AND source_key = 'pokedex_owned_count'
-            """,
-            (capture_step_id,),
-        )
-        self._connection.execute(
-            """
-            DELETE FROM step_conditions
-            WHERE source_type = 'other' AND source_key = 'owned_non_starter_count'
-              AND step_id IN (
-                  SELECT id FROM mission_steps WHERE mission_game_id = ?
-              )
-            """,
-            (mission_game_id,),
-        )
-        reach_route_step_id = self._connection.execute(
-            """
-            SELECT id FROM mission_steps
-            WHERE mission_game_id = ? AND code = 'reach-route102'
-            """,
-            (mission_game_id,),
-        ).fetchone()[0]
-        self._connection.execute(
-            """
-            DELETE FROM step_conditions
-            WHERE step_id = ? AND purpose = 'complete'
-              AND source_type = 'item' AND source_key = 'Poké Ball'
-            """,
-            (reach_route_step_id,),
-        )
-
-        conditions = {
-            "leave-birch-lab": (
-                (1, "unlock", "flag", "SYS_POKEDEX_GET", "set", "true", "boolean"),
-                (1, "unlock", "var", "BIRCH_LAB_STATE", ">=", "5", "integer"),
-                (1, "unlock", "item", "Poké Ball", ">=", "1", "integer"),
-                (1, "complete", "map", "current", "=", "0:9", "text"),
-                (2, "complete", "map", "current", "=", "0:16", "text"),
-                (3, "complete", "map", "current", "=", "0:10", "text"),
-                (4, "complete", "map", "current", "=", "0:17", "text"),
-                (5, "complete", "party", "non_starter_count", ">=", "2", "integer"),
-            ),
-            "reach-route101": (
-                (1, "complete", "flag", "RECEIVED_RUNNING_SHOES", "set", "true", "boolean"),
-                (1, "complete", "map", "current", "=", "0:16", "text"),
-                (2, "complete", "flag", "RECEIVED_RUNNING_SHOES", "set", "true", "boolean"),
-                (2, "complete", "map", "current", "=", "0:10", "text"),
-                (3, "complete", "flag", "RECEIVED_RUNNING_SHOES", "set", "true", "boolean"),
-                (3, "complete", "map", "current", "=", "0:17", "text"),
-                (4, "complete", "party", "non_starter_count", ">=", "2", "integer"),
-            ),
-            "reach-oldale": (
-                (1, "complete", "map", "current", "=", "0:10", "text"),
-                (2, "complete", "map", "current", "=", "0:17", "text"),
-                (3, "complete", "party", "non_starter_count", ">=", "2", "integer"),
-            ),
-            "reach-route102": (
-                (1, "complete", "map", "current", "=", "0:17", "text"),
-                (2, "complete", "party", "non_starter_count", ">=", "2", "integer"),
-            ),
-            "reach-route102-grass": (
-                (1, "complete", "map", "current", "=", "0:17", "text"),
-                (1, "complete", "tile", "current", "=", "39:5", "text"),
-                (2, "complete", "party", "non_starter_count", ">=", "2", "integer"),
-            ),
-            "catch-new-route102-pokemon": (
-                (1, "unlock", "map", "current", "=", "0:17", "text"),
-                (1, "unlock", "item", "Poké Ball", ">=", "1", "integer"),
-                (1, "complete", "item", "Poké Ball", "=", "0", "integer"),
-                (1, "complete", "party", "non_starter_count", ">=", "2", "integer"),
-            ),
-            "heal-captured-pokemon-oldale": (
-                (1, "unlock", "party", "non_starter_count", ">=", "2", "integer"),
-                (1, "complete", "party", "all_healthy", "=", "true", "boolean"),
-                (1, "complete", "map", "current", "=", "0:10", "text"),
-                (2, "complete", "party", "all_healthy", "=", "true", "boolean"),
-                (2, "complete", "map", "current", "=", "2:2", "text"),
-            ),
-            "deposit-shiny-starter": (
-                (1, "unlock", "party", "non_starter_count", ">=", "2", "integer"),
-                (1, "complete", "other", "shiny_starter_in_storage", "=", "true", "boolean"),
-                (1, "complete", "party", "configured_starter_count", "=", "0", "integer"),
-                (1, "complete", "party", "count", ">=", "2", "integer"),
-            ),
-            "return-route102-grass": (
-                (1, "complete", "map", "current", "=", "0:17", "text"),
-                (1, "complete", "tile", "current", "=", "39:5", "text"),
-            ),
-            "ev-train-captured-pokemon": (
-                (1, "unlock", "other", "shiny_starter_in_storage", "=", "true", "boolean"),
-                (1, "unlock", "party", "count", ">=", "2", "integer"),
-                (1, "complete", "party", "minimum_level", ">=", str(training_target_level), "integer"),
-                (1, "complete", "party", "count", ">=", "2", "integer"),
-                (1, "complete", "other", "shiny_starter_in_storage", "=", "true", "boolean"),
-            ),
-        }
-        for step_code, entries in conditions.items():
-            step_id = self._connection.execute(
-                "SELECT id FROM mission_steps WHERE mission_game_id = ? AND code = ?",
-                (mission_game_id, step_code),
-            ).fetchone()[0]
-            for group, purpose, source_type, source_key, operator, expected_value, value_type in entries:
-                self._connection.execute(
-                    """
-                    INSERT INTO step_conditions(
-                        step_id, purpose, condition_group, source_type, source_key,
-                        operator, expected_value, value_type
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(
-                        step_id, purpose, condition_group, source_type,
-                        source_key, operator, expected_value
-                    ) DO NOTHING
-                    """,
-                    (
-                        step_id,
-                        purpose,
-                        group,
-                        source_type,
-                        source_key,
-                        operator,
-                        expected_value,
-                        value_type,
-                    ),
-                )
+        """Load the versioned built-in mission catalogue."""
+        catalog_path = Path(__file__).with_name(f"catalog_v{CATALOG_VERSION}.sql")
+        self._connection.executescript(catalog_path.read_text(encoding="utf-8"))
 
     def mission_plan(self, game_code: str, mission_code: str) -> MissionPlan | None:
         mission = self._connection.execute(
@@ -1042,6 +395,20 @@ class MissionsDatabase:
         ).fetchone()
         if mission is None:
             return None
+        rule_rows = self._connection.execute(
+            """
+            SELECT rule_key, value, value_type
+            FROM campaign_rules
+            JOIN games ON games.id = campaign_rules.game_id
+            WHERE games.code = ?
+            ORDER BY rule_key
+            """,
+            (game_code,),
+        ).fetchall()
+        rules = {
+            row["rule_key"]: _decode_rule_value(row["value"], row["value_type"])
+            for row in rule_rows
+        }
         step_rows = self._connection.execute(
             "SELECT * FROM mission_steps WHERE mission_game_id = ? ORDER BY step_order",
             (mission["mission_game_id"],),
@@ -1060,6 +427,9 @@ class MissionsDatabase:
                     step_order=row["step_order"],
                     name=row["name"],
                     action=row["action"],
+                    action_params=_decode_mapping(row["action_params"], "action_params"),
+                    recovery_action=row["recovery_action"],
+                    recovery_params=_decode_mapping(row["recovery_params"], "recovery_params"),
                     map_group=row["map_group"],
                     map_number=row["map_number"],
                     map_name=row["map_name"],
@@ -1087,6 +457,7 @@ class MissionsDatabase:
             code=mission["code"],
             name=mission["name"],
             game_code=mission["game_code"],
+            rules=rules,
             steps=tuple(steps),
         )
 
