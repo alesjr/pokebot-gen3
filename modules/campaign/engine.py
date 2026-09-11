@@ -4,6 +4,7 @@ from collections import defaultdict
 from collections.abc import Callable, Generator
 from typing import Protocol
 
+from modules.campaign.capabilities import CampaignCapabilityResolver, ResolvedCapability
 from modules.context import context
 from modules.map_data import get_map_enum
 from modules.missions.database import MissionPlan, MissionStep, MissionsDatabase, StepCondition
@@ -137,21 +138,23 @@ class CartridgeStateReader:
 
 
 class CampaignExecutor:
-    """Execute ordered database steps through an explicit action registry."""
+    """Execute ordered database steps through resolved internal capabilities."""
 
     def __init__(
         self,
         database: MissionsDatabase,
         profile: str,
         state_reader: StateReader,
-        actions: dict[str, Callable[[], Generator]],
+        capability_resolver: CampaignCapabilityResolver,
         on_step_started: Callable[[MissionStep], None] | None = None,
+        on_capability_changed: Callable[[object | None], None] | None = None,
     ):
         self._database = database
         self._profile = profile
         self._state_reader = state_reader
-        self._actions = actions
+        self._capability_resolver = capability_resolver
         self._on_step_started = on_step_started
+        self._on_capability_changed = on_capability_changed
 
     def is_complete(self, mission: MissionPlan) -> bool:
         if not mission.steps:
@@ -185,9 +188,9 @@ class CampaignExecutor:
                     raise BotModeError(
                         f"Campaign step prerequisite not satisfied: {step.code}:{purpose}"
                     )
-            action = self._actions.get(step.action)
-            if action is None:
-                raise BotModeError(f"Campaign action is not registered: {step.action}")
+            capability = self._capability_resolver.resolve(
+                step.action, step.action_params, step
+            )
             self._database.update_progress(
                 self._profile,
                 mission.mission_game_id,
@@ -196,11 +199,20 @@ class CampaignExecutor:
             )
             if self._on_step_started is not None:
                 self._on_step_started(step)
-            yield from action()
+            yield from self._run_capability(capability)
             complete, observations = self._evaluate(step, "complete", required=True)
             self._database.record_observations(
                 self._profile, mission.mission_game_id, observations
             )
+            if not complete and step.recovery_action is not None:
+                recovery = self._capability_resolver.resolve(
+                    step.recovery_action, step.recovery_params, step
+                )
+                yield from self._run_capability(recovery)
+                complete, observations = self._evaluate(step, "complete", required=True)
+                self._database.record_observations(
+                    self._profile, mission.mission_game_id, observations
+                )
             if not complete:
                 raise BotModeError(
                     f"Campaign step returned without satisfying completion conditions: {step.code}"
@@ -212,6 +224,15 @@ class CampaignExecutor:
             status="available",
             current_step_id=None,
         )
+
+    def _run_capability(self, capability: ResolvedCapability) -> Generator:
+        if self._on_capability_changed is not None:
+            self._on_capability_changed(capability.delegate)
+        try:
+            yield from capability.run()
+        finally:
+            if self._on_capability_changed is not None:
+                self._on_capability_changed(None)
 
     def _evaluate(
         self, step: MissionStep, purpose: str, *, required: bool

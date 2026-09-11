@@ -7,10 +7,10 @@
 
 ## 2. Despacho e delegação Campaign
 
-- [ ] 2.1 Implementar resolver controlado para referências internas de função, controller e mode, reutilizando registro de modes; confirmar rejeição explícita de namespace, símbolo ou parâmetros não permitidos
-- [ ] 2.2 Adaptar executor atual para invocar capacidade resolvida com parâmetros do catálogo; confirmar que execução ainda reavalia condições do save antes e depois da ação
-- [ ] 2.3 Encaminhar callbacks Campaign para capacidade ativa pelo contrato existente de mode; confirmar suporte a batalha iniciada/finalizada, whiteout e evolução sem branches pelo nome da etapa
-- [ ] 2.4 Remover mapa manual e wrappers Campaign que apenas duplicam chamadas existentes; confirmar que ações das três missões convertidas resolvem diretamente para capacidades reais
+- [x] 2.1 Implementar resolver controlado para referências internas de função, controller e mode, reutilizando registro de modes; confirmar rejeição explícita de namespace, símbolo ou parâmetros não permitidos
+- [x] 2.2 Adaptar executor atual para invocar capacidade resolvida com parâmetros do catálogo; confirmar que execução ainda reavalia condições do save antes e depois da ação
+- [x] 2.3 Encaminhar callbacks Campaign para capacidade ativa pelo contrato existente de mode; confirmar suporte a batalha iniciada/finalizada, whiteout e evolução sem branches pelo nome da etapa
+- [x] 2.4 Remover mapa manual e wrappers Campaign que apenas duplicam chamadas existentes; confirmar que ações das três missões convertidas resolvem diretamente para capacidades reais
 
 ## 3. Políticas globais de encontro e captura
 
