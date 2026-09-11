@@ -129,10 +129,18 @@ class StaticSoftResetsMode(BotMode):
     def on_battle_ended(self, outcome: BattleOutcome) -> None:
         self._controller.on_battle_ended(outcome)
 
-    def run(self) -> Generator:
+    def run(
+        self,
+        *,
+        shiny_only: bool = False,
+        stop_when_caught: bool = False,
+    ) -> Generator:
         encounter = get_targeted_encounter()
-        self._controller = StaticSoftResetController(encounter)
-        yield from self._controller.run()
+        self._controller = StaticSoftResetController(
+            encounter,
+            qualifies=(lambda candidate: candidate.is_shiny) if shiny_only else None,
+        )
+        yield from self._controller.run(stop_when_caught=stop_when_caught)
 
 
 class StaticSoftResetController:

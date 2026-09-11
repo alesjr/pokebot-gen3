@@ -10,9 +10,8 @@ from modules.campaign import (
     save_campaign_checkpoint,
 )
 from modules.campaign.capabilities import CampaignCapabilityResolver, campaign_capability
-from modules.campaign.rse import (
-    run_catch_new_route102_pokemon,
-)
+from modules.campaign.rse import run_deposit_party_shinies
+from modules.battle_state import BattleOutcome, EncounterType
 from modules.battle_strategies import BattleStrategy
 from modules.clock import reach_bedroom_clock, set_clock
 from modules.context import context
@@ -20,6 +19,10 @@ from modules.encounter import EncounterInfo
 from modules.memory import get_event_flag
 from modules.map_data import PokemonCenter, get_map_enum
 from modules.missions import MissionsDatabase
+from modules.modes._asserts import (
+    assert_boxes_or_party_can_fit_pokemon,
+    assert_player_has_poke_balls,
+)
 from modules.modes._interface import BattleAction, BotMode, BotModeError
 from modules.modes.ev_train import EVTrainMode
 from modules.modes.starters import (
@@ -27,7 +30,10 @@ from modules.modes.starters import (
     finish_rse_starter_sequence,
     reach_rse_starter_bag,
 )
-from modules.modes.util import heal_in_pokemon_center, save_the_game
+from modules.modes.util import heal_in_pokemon_center, save_the_game, spin
+from modules.modes.util.map import find_closest_pokemon_center
+from modules.player import get_player_location
+from modules.pokemon_party import get_party
 from modules.runtime import get_base_path
 
 
@@ -42,6 +48,11 @@ class CampaignMode(BotMode):
 
     def __init__(self):
         self._active_capability: object | None = None
+        self._campaign_rules: dict[str, object] = {}
+        self._catch_wild_encounters = False
+        self._pending_shiny_personality: int | None = None
+        self._shiny_deposit_pending = False
+        self._defer_shiny_deposit = False
         self._trainer_name = context.profile.trainer_name or os.environ.get("POKEBOT_CAMPAIGN_TRAINER_NAME", "Alesjr")
         self._trainer_gender = context.profile.trainer_gender
         self._starter = context.profile.starter or os.environ.get("POKEBOT_CAMPAIGN_STARTER", "Mudkip")
@@ -50,15 +61,28 @@ class CampaignMode(BotMode):
     def on_battle_started(
         self, encounter: EncounterInfo | None
     ) -> BattleAction | BattleStrategy | None:
+        action = self._campaign_battle_action(encounter)
+        if action is not None:
+            return action
         return self._forward("on_battle_started", encounter, default=None)
 
     def on_navigation_battle_started(
         self, encounter: EncounterInfo | None
     ) -> BattleAction | BattleStrategy | None:
+        action = self._campaign_battle_action(encounter)
+        if action is not None:
+            return action
         return self._forward("on_navigation_battle_started", encounter, default=None)
 
-    def on_battle_ended(self, outcome) -> None:
+    def on_battle_ended(self, outcome: BattleOutcome) -> None:
         self._forward("on_battle_ended", outcome, default=None)
+        if self._pending_shiny_personality is not None:
+            if outcome is BattleOutcome.Caught:
+                self._shiny_deposit_pending = any(
+                    pokemon.personality_value == self._pending_shiny_personality
+                    for pokemon in get_party()
+                )
+            self._pending_shiny_personality = None
 
     def on_whiteout(self) -> bool:
         return self._forward("on_whiteout", default=False)
@@ -98,6 +122,7 @@ class CampaignMode(BotMode):
                 capability_resolver,
                 self._on_step_started,
                 self._on_capability_changed,
+                self._before_capability_resume,
             )
             last_completed_mission = None
             while context.bot_mode == self.name():
@@ -110,6 +135,7 @@ class CampaignMode(BotMode):
                         context.message = "Nenhuma missão pendente conforme o save atual."
                     yield
                     continue
+                self._campaign_rules = mission.rules
                 yield from executor.run(mission)
                 self._active_capability = None
                 last_completed_mission = mission
@@ -141,12 +167,34 @@ class CampaignMode(BotMode):
         yield from save_campaign_checkpoint(3)
 
     @campaign_capability
-    def _catch_new_route102_pokemon(self, minimum_non_starter_count: int) -> Generator:
+    def _catch_wild_pokemon(
+        self,
+        target_source_type: str,
+        target_source: str,
+        target_count: int,
+        capture_required: bool = True,
+        deposit_shinies: bool = False,
+    ) -> Generator:
+        if not capture_required:
+            return
         state_reader = CartridgeStateReader(self._starter)
-        yield from run_catch_new_route102_pokemon(
-            lambda: int(state_reader.read("party", "non_starter_count"))
-            >= minimum_non_starter_count,
-        )
+        target_reached = lambda: int(
+            state_reader.read(target_source_type, target_source)
+        ) >= target_count
+        previous = self._catch_wild_encounters
+        previous_defer = self._defer_shiny_deposit
+        self._catch_wild_encounters = True
+        self._defer_shiny_deposit = not deposit_shinies
+        try:
+            while not target_reached():
+                assert_player_has_poke_balls()
+                assert_boxes_or_party_can_fit_pokemon()
+                yield from spin(target_reached)
+        finally:
+            self._catch_wild_encounters = previous
+            self._defer_shiny_deposit = previous_defer
+            if not deposit_shinies:
+                self._shiny_deposit_pending = False
 
     @campaign_capability
     def _heal_captured_pokemon(
@@ -184,8 +232,68 @@ class CampaignMode(BotMode):
         finally:
             self._active_capability = previous
 
+    def _campaign_battle_action(
+        self, encounter: EncounterInfo | None
+    ) -> BattleAction | None:
+        if encounter is None or encounter.type in {
+            EncounterType.Gift,
+            EncounterType.Hatched,
+            EncounterType.Tutorial,
+        }:
+            return None
+        if encounter.is_shiny and bool(
+            self._campaign_rules.get("shiny.capture_required", False)
+        ):
+            assert_player_has_poke_balls()
+            assert_boxes_or_party_can_fit_pokemon()
+            encounter.battle_action = BattleAction.Catch
+            self._pending_shiny_personality = encounter.pokemon.personality_value
+            return BattleAction.Catch
+        if self._catch_wild_encounters and encounter.type.is_wild:
+            assert_player_has_poke_balls()
+            assert_boxes_or_party_can_fit_pokemon()
+            encounter.battle_action = BattleAction.Catch
+            return BattleAction.Catch
+        return None
+
+    @staticmethod
+    def _party_has_shiny() -> bool:
+        return any(pokemon.is_shiny for pokemon in get_party().non_eggs)
+
     def _on_capability_changed(self, capability: object | None) -> None:
         self._active_capability = capability
+        if capability is None and not self._party_has_shiny():
+            self._shiny_deposit_pending = False
+
+    def _before_capability_resume(self) -> Generator:
+        if self._defer_shiny_deposit or not self._shiny_deposit_pending:
+            return
+        if not self._party_has_shiny():
+            self._shiny_deposit_pending = False
+            return
+        terminal_tile = self._campaign_rules.get("shiny.pc_terminal_tile")
+        if (
+            not isinstance(terminal_tile, list)
+            or len(terminal_tile) != 2
+            or not all(isinstance(value, int) for value in terminal_tile)
+        ):
+            raise BotModeError("Campaign catalog must define shiny.pc_terminal_tile.")
+
+        source_map, source_coordinates = get_player_location()
+        previous = self._active_capability
+        self._active_capability = None
+        try:
+            yield from heal_in_pokemon_center(find_closest_pokemon_center())
+            yield from run_deposit_party_shinies(*terminal_tile)
+            self._shiny_deposit_pending = False
+            yield from navigate_to_catalog_location(
+                source_map.value[0],
+                source_map.value[1],
+                source_coordinates[0],
+                source_coordinates[1],
+            )
+        finally:
+            self._active_capability = previous
 
     def _on_step_started(self, step) -> None:
         location = ""

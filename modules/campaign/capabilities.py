@@ -54,6 +54,7 @@ class CampaignCapabilityResolver:
         reference: str,
         parameters: Mapping[str, object],
         step: MissionStep,
+        rules: Mapping[str, object] | None = None,
     ) -> ResolvedCapability:
         if not isinstance(reference, str) or not reference:
             raise BotModeError("Campaign capability reference must be a non-empty string.")
@@ -64,7 +65,7 @@ class CampaignCapabilityResolver:
         if not separator or kind not in {"function", "controller", "mode"}:
             raise BotModeError(f"Unsupported Campaign capability reference: {reference}")
 
-        resolved = self._resolve_value(dict(parameters), step)
+        resolved = self._resolve_value(dict(parameters), step, rules or {})
         if not isinstance(resolved, dict):
             raise BotModeError(f"Campaign parameters must resolve to an object: {reference}")
 
@@ -207,19 +208,36 @@ class CampaignCapabilityResolver:
         except ImportError as error:
             raise BotModeError(f"Campaign module cannot be loaded: {reference}") from error
 
-    def _resolve_value(self, value: object, step: MissionStep) -> object:
+    def _resolve_value(
+        self,
+        value: object,
+        step: MissionStep,
+        rules: Mapping[str, object],
+    ) -> object:
         if isinstance(value, str) and value.startswith("$"):
-            return self._binding(value[1:], step)
+            return self._binding(value[1:], step, rules)
         if isinstance(value, list):
-            return [self._resolve_value(item, step) for item in value]
+            return [self._resolve_value(item, step, rules) for item in value]
         if isinstance(value, dict):
-            return {key: self._resolve_value(item, step) for key, item in value.items()}
+            return {
+                key: self._resolve_value(item, step, rules)
+                for key, item in value.items()
+            }
         return value
 
-    def _binding(self, path: str, step: MissionStep) -> object:
+    def _binding(
+        self,
+        path: str,
+        step: MissionStep,
+        rules: Mapping[str, object],
+    ) -> object:
         root, dot, remainder = path.partition(".")
         if root == "step":
             current: object = step
+        elif root == "rules":
+            if not dot or remainder not in rules:
+                raise BotModeError(f"Unknown Campaign parameter binding: ${path}")
+            return rules[remainder]
         elif root in self._bindings:
             current = self._bindings[root]
         else:

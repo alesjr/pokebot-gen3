@@ -103,12 +103,30 @@ class CartridgeStateReader:
             if source_key == "non_starter_count":
                 expected_species = self._configured_starter_species()
                 return sum(pokemon.species.name not in expected_species for pokemon in party)
+            if source_key == "shiny_count":
+                return sum(pokemon.is_shiny for pokemon in party)
+            if source_key == "non_shiny_count":
+                return sum(not pokemon.is_shiny for pokemon in party)
         if source_type == "other" and source_key == "game_started":
             return game_has_started()
         if source_type == "other" and source_key == "pokedex_owned_count":
             from modules.pokedex import get_pokedex
 
             return len(get_pokedex().owned_species)
+        if source_type == "other" and source_key == "owned_non_starter_count":
+            from modules.pokemon_party import get_party
+            from modules.pokemon_storage import get_pokemon_storage
+
+            expected_species = self._configured_starter_species()
+            owned = list(get_party().non_eggs) + [
+                slot.pokemon
+                for box in get_pokemon_storage().boxes
+                for slot in box.slots
+                if not slot.pokemon.is_egg
+            ]
+            return sum(
+                pokemon.species.name not in expected_species for pokemon in owned
+            )
         if source_type == "other" and source_key == "shiny_starter_in_storage":
             from modules.pokemon_storage import get_pokemon_storage
 
@@ -148,6 +166,7 @@ class CampaignExecutor:
         capability_resolver: CampaignCapabilityResolver,
         on_step_started: Callable[[MissionStep], None] | None = None,
         on_capability_changed: Callable[[object | None], None] | None = None,
+        before_capability_resume: Callable[[], Generator] | None = None,
     ):
         self._database = database
         self._profile = profile
@@ -155,6 +174,7 @@ class CampaignExecutor:
         self._capability_resolver = capability_resolver
         self._on_step_started = on_step_started
         self._on_capability_changed = on_capability_changed
+        self._before_capability_resume = before_capability_resume
 
     def is_complete(self, mission: MissionPlan) -> bool:
         if not mission.steps:
@@ -189,7 +209,7 @@ class CampaignExecutor:
                         f"Campaign step prerequisite not satisfied: {step.code}:{purpose}"
                     )
             capability = self._capability_resolver.resolve(
-                step.action, step.action_params, step
+                step.action, step.action_params, step, mission.rules
             )
             self._database.update_progress(
                 self._profile,
@@ -206,7 +226,7 @@ class CampaignExecutor:
             )
             if not complete and step.recovery_action is not None:
                 recovery = self._capability_resolver.resolve(
-                    step.recovery_action, step.recovery_params, step
+                    step.recovery_action, step.recovery_params, step, mission.rules
                 )
                 yield from self._run_capability(recovery)
                 complete, observations = self._evaluate(step, "complete", required=True)
@@ -229,7 +249,15 @@ class CampaignExecutor:
         if self._on_capability_changed is not None:
             self._on_capability_changed(capability.delegate)
         try:
-            yield from capability.run()
+            generator = capability.run()
+            while True:
+                if self._before_capability_resume is not None:
+                    yield from self._before_capability_resume()
+                try:
+                    yielded = next(generator)
+                except StopIteration:
+                    break
+                yield yielded
         finally:
             if self._on_capability_changed is not None:
                 self._on_capability_changed(None)

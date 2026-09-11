@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Generator
 
 from modules.campaign.engine import save_campaign_checkpoint
 from modules.context import context
 from modules.items import get_item_bag, get_item_by_name
 from modules.keyboard import get_naming_screen_data, type_in_naming_screen
-from modules.map_data import MapRSE, PokemonCenter, get_map_enum
+from modules.map_data import MapRSE, PokemonCenter
 from modules.memory import (
     GameState,
     game_has_started,
@@ -20,6 +19,7 @@ from modules.modes.util import (
     ensure_facing_direction,
     heal_in_pokemon_center,
     navigate_to,
+    save_the_game,
     talk_to_npc,
     wait_for_player_avatar_to_be_controllable,
     walk_through_warp,
@@ -245,53 +245,31 @@ def run_leave_birch_lab(*, timeout_frames: int = 30_000) -> Generator:
     raise BotModeError(f"Cannot leave Birch's lab from {get_player_location()[0].name}.")
 
 
-def run_catch_new_route102_pokemon(
-    target_reached: Callable[[], bool],
-) -> Generator:
-    if target_reached():
-        return
-    # TODO: integrar captura/cura da missão 3 aos handlers originais de batalha,
-    # get_last_heal_location(), PokemonCenter e busca de centro mais próximo.
-    raise BotModeError("TODO: integração de captura/cura da missão 3 pendente.")
-    yield
-
-
-def run_deposit_shiny_starter(
-    starter_name: str,
-    map_group: int,
-    map_number: int,
+def run_deposit_party_shinies(
     tile_x: int,
     tile_y: int,
+    storage_required: bool = True,
 ) -> Generator:
-    starter = next(
-        (
-            pokemon
-            for pokemon in get_party()
-            if pokemon.is_shiny and pokemon.species.name == starter_name
-        ),
-        None,
-    )
-    if starter is None:
+    if not storage_required:
+        return
+    shinies = [pokemon for pokemon in get_party().non_eggs if pokemon.is_shiny]
+    if not shinies:
         return
 
-    destination_map = get_map_enum((map_group, map_number))
-    if get_player_location()[0] is MapRSE.OLDALE_TOWN:
-        yield from navigate_to(MapRSE.OLDALE_TOWN, PokemonCenter.OldaleTown.value[1])
-        yield from walk_through_warp(MapRSE.OLDALE_TOWN, "Up", target_x=6)
-        yield from wait_for_player_avatar_to_be_controllable(
-            "B", stable_frames=30, wait_for_no_script=True, timeout_frames=4_000
-        )
-    if get_player_location()[0] is not destination_map:
+    destination_map = get_player_location()[0]
+    if not destination_map.name.endswith("POKEMON_CENTER_1F"):
         raise BotModeError(
-            f"Could not enter the Oldale Pokémon Center: {get_player_location()[0].name}."
+            f"Cannot deposit party shinies outside a Pokémon Center: {destination_map.name}."
         )
 
     yield from navigate_to(destination_map, (tile_x, tile_y))
     yield from ensure_facing_direction("Up")
-    yield from interact_with_pc([PCAction.deposit_pokemon_to_box(starter)])
+    yield from interact_with_pc(
+        [PCAction.deposit_pokemon_to_box(pokemon) for pokemon in shinies]
+    )
     yield from navigate_to(destination_map, (7, 8))
     yield from walk_through_warp(destination_map, "Down", target_x=7)
     yield from wait_for_player_avatar_to_be_controllable(
         "B", stable_frames=30, wait_for_no_script=True, timeout_frames=4_000
     )
-    yield from save_campaign_checkpoint(3)
+    yield from save_the_game()

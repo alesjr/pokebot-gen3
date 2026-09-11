@@ -14,12 +14,12 @@
 
 ## 3. Políticas globais de encontro e captura
 
-- [ ] 3.1 Integrar prioridade shiny no callback Campaign antes da capacidade ativa, usando identificação e estratégia de captura existentes; comportamento observável: nenhum shiny segue para luta ou fuga deliberada
-- [ ] 3.2 Registrar necessidade de depósito quando shiny capturado ocupa vaga do time e executar depósito via PC existente na primeira parada segura; comportamento observável: shiny permanece armazenado e nunca participa de combate intencional
-- [ ] 3.3 Dirigir starter configurado pelo mode de starters com parada no shiny e evidência do save; comportamento observável: Campaign não avança com starter normal
-- [ ] 3.4 Dirigir primeira captura selvagem após obtenção das Poké Balls pela estratégia existente e depositar starter shiny em seguida; comportamento observável: ordem é Poké Balls, captura, cura necessária, depósito
-- [ ] 3.5 Preencher vagas normais até time alcançar seis usando rotina de encontro e captura existente; comportamento observável: shinies armazenados não contam como combatentes permanentes
-- [ ] 3.6 Encaminhar encontros únicos e lendários ao mode/controller correspondente definido no catálogo; comportamento observável: encontro com shiny possível só termina aceito após captura shiny
+- [x] 3.1 Integrar prioridade shiny no callback Campaign antes da capacidade ativa, usando identificação e estratégia de captura existentes; comportamento observável: nenhum shiny segue para luta ou fuga deliberada
+- [x] 3.2 Registrar necessidade de depósito quando shiny capturado ocupa vaga do time e executar depósito via PC existente na primeira parada segura; comportamento observável: shiny permanece armazenado e nunca participa de combate intencional
+- [x] 3.3 Dirigir starter configurado pelo mode de starters com parada no shiny e evidência do save; comportamento observável: Campaign não avança com starter normal
+- [x] 3.4 Dirigir primeira captura selvagem após obtenção das Poké Balls pela estratégia existente e depositar starter shiny em seguida; comportamento observável: ordem é Poké Balls, captura, cura necessária, depósito
+- [x] 3.5 Preencher vagas normais até time alcançar seis usando rotina de encontro e captura existente; comportamento observável: shinies armazenados não contam como combatentes permanentes
+- [x] 3.6 Encaminhar encontros únicos e lendários ao mode/controller correspondente definido no catálogo; comportamento observável: encontro com shiny possível só termina aceito após captura shiny
 
 ## 4. Seleção e manutenção da equipe
 

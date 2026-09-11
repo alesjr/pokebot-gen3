@@ -29,7 +29,7 @@ INSERT INTO missions(code, name, description, category, sequence) VALUES
     (
         'mission-003-reach-route102',
         'Missão 3 - Chegar à primeira rota',
-        'Chega à Route 102 e usa as primeiras Poké Balls para capturar novas espécies.',
+        'Chega à Route 102, faz a primeira captura e forma a equipe inicial.',
         'main_story',
         3
     )
@@ -55,6 +55,7 @@ WITH rule_catalog(rule_key, value, value_type, description) AS (
     VALUES
         ('shiny.capture_required', 'true', 'boolean', 'Capturar todo Pokémon shiny encontrado.'),
         ('shiny.storage_required', 'true', 'boolean', 'Armazenar Pokémon shiny no PC.'),
+        ('shiny.pc_terminal_tile', '[10,2]', 'json', 'Posição do terminal nos Centros Pokémon RSE.'),
         ('starter.shiny_required', 'true', 'boolean', 'O primeiro starter deve ser shiny.'),
         ('first_wild.capture_required', 'true', 'boolean', 'Capturar o primeiro encontro selvagem após obter Poké Balls.'),
         ('training.before_mission', 'true', 'boolean', 'Treinar antes das missões até o nível requerido.'),
@@ -95,7 +96,7 @@ WITH step_catalog(
         ('mission-001-first-starter', 'reach-starter-bag', 4, 'Chegar à bolsa do Professor Birch', NULL,
          'function:modules.modes.starters:reach_rse_starter_bag', '{}', 0, 16, 'ROUTE101', NULL, 7, 15, NULL, NULL),
         ('mission-001-first-starter', 'choose-starter', 5, 'Obter starter shiny configurado', NULL,
-         'function:campaign:_choose_starter', '{"starter":"$profile.starter","shiny_required":true}',
+         'function:campaign:_choose_starter', '{"starter":"$profile.starter","shiny_required":"$rules.starter.shiny_required"}',
          0, 16, 'ROUTE101', NULL, 7, 15, NULL, NULL),
 
         ('mission-002-first-poke-balls', 'defeat-route103-rival', 1, 'Derrotar rival na Route 103', NULL,
@@ -113,16 +114,19 @@ WITH step_catalog(
          'function:campaign:_reach_route102', '{"map_group":"$step.map_group","map_number":"$step.map_number","tile_x":"$step.tile_x","tile_y":"$step.tile_y"}', 0, 17, 'ROUTE102', NULL, 49, 10, NULL, NULL),
         ('mission-003-reach-route102', 'reach-route102-grass', 5, 'Entrar na grama da Route 102', NULL,
          'function:modules.campaign.engine:navigate_to_catalog_location', '{"map_group":"$step.map_group","map_number":"$step.map_number","tile_x":"$step.tile_x","tile_y":"$step.tile_y"}', 0, 17, 'ROUTE102', NULL, 39, 5, NULL, NULL),
-        ('mission-003-reach-route102', 'catch-new-route102-pokemon', 6, 'Gastar as primeiras Poké Balls capturando novas espécies', NULL,
-         'function:campaign:_catch_new_route102_pokemon', '{"minimum_non_starter_count":2}',
+        ('mission-003-reach-route102', 'catch-new-route102-pokemon', 6, 'Capturar o primeiro Pokémon selvagem', NULL,
+         'function:campaign:_catch_wild_pokemon', '{"target_source_type":"other","target_source":"owned_non_starter_count","target_count":1,"capture_required":"$rules.first_wild.capture_required"}',
          0, 17, 'ROUTE102', NULL, 39, 5, NULL, NULL),
         ('mission-003-reach-route102', 'heal-captured-pokemon-oldale', 7, 'Curar equipe no Centro Pokémon de Oldale', NULL,
          'function:campaign:_heal_captured_pokemon', '{"map_group":"$step.map_group","map_number":"$step.map_number","tile_x":"$step.tile_x","tile_y":"$step.tile_y"}', 0, 10, 'OLDALE_TOWN', NULL, 6, 16, NULL, NULL),
         ('mission-003-reach-route102', 'deposit-shiny-starter', 8, 'Depositar starter shiny no PC', NULL,
-         'function:modules.campaign.rse:run_deposit_shiny_starter', '{"starter_name":"$profile.starter","map_group":"$step.map_group","map_number":"$step.map_number","tile_x":"$step.tile_x","tile_y":"$step.tile_y"}', 2, 2, 'OLDALE_TOWN_POKEMON_CENTER_1F', NULL, 10, 2, NULL, NULL),
+         'function:modules.campaign.rse:run_deposit_party_shinies', '{"tile_x":"$step.tile_x","tile_y":"$step.tile_y","storage_required":"$rules.shiny.storage_required"}', 2, 2, 'OLDALE_TOWN_POKEMON_CENTER_1F', NULL, 10, 2, NULL, NULL),
         ('mission-003-reach-route102', 'return-route102-grass', 9, 'Voltar para a grama da Route 102', NULL,
          'function:modules.campaign.engine:navigate_to_catalog_location', '{"map_group":"$step.map_group","map_number":"$step.map_number","tile_x":"$step.tile_x","tile_y":"$step.tile_y"}', 0, 17, 'ROUTE102', NULL, 39, 5, NULL, NULL),
-        ('mission-003-reach-route102', 'ev-train-captured-pokemon', 10, 'Treinar capturados até o nível 20',
+        ('mission-003-reach-route102', 'fill-party', 10, 'Capturar até formar equipe com seis combatentes', NULL,
+         'function:campaign:_catch_wild_pokemon', '{"target_source_type":"party","target_source":"non_shiny_count","target_count":"$rules.party.target_size","deposit_shinies":"$rules.shiny.storage_required"}',
+         0, 17, 'ROUTE102', NULL, 39, 5, NULL, NULL),
+        ('mission-003-reach-route102', 'ev-train-captured-pokemon', 11, 'Treinar capturados até o nível 20',
          'first_gym_max_level=15; level_margin=5; target_level=20',
          'function:campaign:_ev_train_captured_pokemon', '{"target_level":20}',
          0, 17, 'ROUTE102', NULL, 39, 5, NULL, NULL)
@@ -161,6 +165,67 @@ ON CONFLICT(mission_game_id, code) DO UPDATE SET
     tile_x = excluded.tile_x,
     tile_y = excluded.tile_y;
 
+DELETE FROM step_conditions
+WHERE step_id IN (
+    SELECT old_steps.id
+    FROM mission_steps AS old_steps
+    JOIN mission_games ON mission_games.id = old_steps.mission_game_id
+    JOIN missions ON missions.id = mission_games.mission_id
+    JOIN games ON games.id = mission_games.game_id
+    WHERE missions.code = 'mission-003-reach-route102'
+      AND games.code IN ('ruby', 'sapphire', 'emerald')
+)
+AND (
+    (
+        source_type = 'party'
+        AND source_key = 'non_starter_count'
+        AND operator = '>='
+        AND expected_value = '2'
+        AND step_id IN (
+            SELECT mission_steps.id
+            FROM mission_steps
+            JOIN mission_games ON mission_games.id = mission_steps.mission_game_id
+            JOIN missions ON missions.id = mission_games.mission_id
+            WHERE missions.code = 'mission-003-reach-route102'
+              AND mission_steps.code IN (
+                  'leave-birch-lab',
+                  'reach-route101',
+                  'reach-oldale',
+                  'reach-route102',
+                  'reach-route102-grass',
+                  'catch-new-route102-pokemon',
+                  'heal-captured-pokemon-oldale',
+                  'deposit-shiny-starter'
+              )
+        )
+    )
+    OR (
+        source_type = 'item'
+        AND source_key = 'Poké Ball'
+        AND operator = '='
+        AND expected_value = '0'
+        AND step_id IN (
+            SELECT mission_steps.id
+            FROM mission_steps
+            WHERE mission_steps.code = 'catch-new-route102-pokemon'
+        )
+    )
+    OR (
+        source_type = 'party'
+        AND source_key = 'count'
+        AND operator = '>='
+        AND expected_value = '2'
+        AND step_id IN (
+            SELECT mission_steps.id
+            FROM mission_steps
+            WHERE mission_steps.code IN (
+                'deposit-shiny-starter',
+                'ev-train-captured-pokemon'
+            )
+        )
+    )
+);
+
 WITH condition_catalog(
     mission_code, step_code, purpose, condition_group, source_type,
     source_key, operator, expected_value, value_type
@@ -191,41 +256,43 @@ WITH condition_catalog(
         ('mission-003-reach-route102', 'leave-birch-lab', 'complete', 2, 'map', 'current', '=', '0:16', 'text'),
         ('mission-003-reach-route102', 'leave-birch-lab', 'complete', 3, 'map', 'current', '=', '0:10', 'text'),
         ('mission-003-reach-route102', 'leave-birch-lab', 'complete', 4, 'map', 'current', '=', '0:17', 'text'),
-        ('mission-003-reach-route102', 'leave-birch-lab', 'complete', 5, 'party', 'non_starter_count', '>=', '2', 'integer'),
+        ('mission-003-reach-route102', 'leave-birch-lab', 'complete', 5, 'party', 'non_starter_count', '>=', '1', 'integer'),
         ('mission-003-reach-route102', 'reach-route101', 'complete', 1, 'flag', 'RECEIVED_RUNNING_SHOES', 'set', 'true', 'boolean'),
         ('mission-003-reach-route102', 'reach-route101', 'complete', 1, 'map', 'current', '=', '0:16', 'text'),
         ('mission-003-reach-route102', 'reach-route101', 'complete', 2, 'flag', 'RECEIVED_RUNNING_SHOES', 'set', 'true', 'boolean'),
         ('mission-003-reach-route102', 'reach-route101', 'complete', 2, 'map', 'current', '=', '0:10', 'text'),
         ('mission-003-reach-route102', 'reach-route101', 'complete', 3, 'flag', 'RECEIVED_RUNNING_SHOES', 'set', 'true', 'boolean'),
         ('mission-003-reach-route102', 'reach-route101', 'complete', 3, 'map', 'current', '=', '0:17', 'text'),
-        ('mission-003-reach-route102', 'reach-route101', 'complete', 4, 'party', 'non_starter_count', '>=', '2', 'integer'),
+        ('mission-003-reach-route102', 'reach-route101', 'complete', 4, 'party', 'non_starter_count', '>=', '1', 'integer'),
         ('mission-003-reach-route102', 'reach-oldale', 'complete', 1, 'map', 'current', '=', '0:10', 'text'),
         ('mission-003-reach-route102', 'reach-oldale', 'complete', 2, 'map', 'current', '=', '0:17', 'text'),
-        ('mission-003-reach-route102', 'reach-oldale', 'complete', 3, 'party', 'non_starter_count', '>=', '2', 'integer'),
+        ('mission-003-reach-route102', 'reach-oldale', 'complete', 3, 'party', 'non_starter_count', '>=', '1', 'integer'),
         ('mission-003-reach-route102', 'reach-route102', 'complete', 1, 'map', 'current', '=', '0:17', 'text'),
-        ('mission-003-reach-route102', 'reach-route102', 'complete', 2, 'party', 'non_starter_count', '>=', '2', 'integer'),
+        ('mission-003-reach-route102', 'reach-route102', 'complete', 2, 'party', 'non_starter_count', '>=', '1', 'integer'),
         ('mission-003-reach-route102', 'reach-route102-grass', 'complete', 1, 'map', 'current', '=', '0:17', 'text'),
         ('mission-003-reach-route102', 'reach-route102-grass', 'complete', 1, 'tile', 'current', '=', '39:5', 'text'),
-        ('mission-003-reach-route102', 'reach-route102-grass', 'complete', 2, 'party', 'non_starter_count', '>=', '2', 'integer'),
+        ('mission-003-reach-route102', 'reach-route102-grass', 'complete', 2, 'party', 'non_starter_count', '>=', '1', 'integer'),
         ('mission-003-reach-route102', 'catch-new-route102-pokemon', 'unlock', 1, 'map', 'current', '=', '0:17', 'text'),
         ('mission-003-reach-route102', 'catch-new-route102-pokemon', 'unlock', 1, 'item', 'Poké Ball', '>=', '1', 'integer'),
-        ('mission-003-reach-route102', 'catch-new-route102-pokemon', 'complete', 1, 'item', 'Poké Ball', '=', '0', 'integer'),
-        ('mission-003-reach-route102', 'catch-new-route102-pokemon', 'complete', 1, 'party', 'non_starter_count', '>=', '2', 'integer'),
-        ('mission-003-reach-route102', 'heal-captured-pokemon-oldale', 'unlock', 1, 'party', 'non_starter_count', '>=', '2', 'integer'),
+        ('mission-003-reach-route102', 'catch-new-route102-pokemon', 'complete', 1, 'other', 'owned_non_starter_count', '>=', '1', 'integer'),
+        ('mission-003-reach-route102', 'heal-captured-pokemon-oldale', 'unlock', 1, 'other', 'owned_non_starter_count', '>=', '1', 'integer'),
         ('mission-003-reach-route102', 'heal-captured-pokemon-oldale', 'complete', 1, 'party', 'all_healthy', '=', 'true', 'boolean'),
         ('mission-003-reach-route102', 'heal-captured-pokemon-oldale', 'complete', 1, 'map', 'current', '=', '0:10', 'text'),
         ('mission-003-reach-route102', 'heal-captured-pokemon-oldale', 'complete', 2, 'party', 'all_healthy', '=', 'true', 'boolean'),
         ('mission-003-reach-route102', 'heal-captured-pokemon-oldale', 'complete', 2, 'map', 'current', '=', '2:2', 'text'),
-        ('mission-003-reach-route102', 'deposit-shiny-starter', 'unlock', 1, 'party', 'non_starter_count', '>=', '2', 'integer'),
+        ('mission-003-reach-route102', 'deposit-shiny-starter', 'unlock', 1, 'other', 'owned_non_starter_count', '>=', '1', 'integer'),
         ('mission-003-reach-route102', 'deposit-shiny-starter', 'complete', 1, 'other', 'shiny_starter_in_storage', '=', 'true', 'boolean'),
         ('mission-003-reach-route102', 'deposit-shiny-starter', 'complete', 1, 'party', 'configured_starter_count', '=', '0', 'integer'),
-        ('mission-003-reach-route102', 'deposit-shiny-starter', 'complete', 1, 'party', 'count', '>=', '2', 'integer'),
         ('mission-003-reach-route102', 'return-route102-grass', 'complete', 1, 'map', 'current', '=', '0:17', 'text'),
         ('mission-003-reach-route102', 'return-route102-grass', 'complete', 1, 'tile', 'current', '=', '39:5', 'text'),
+        ('mission-003-reach-route102', 'fill-party', 'unlock', 1, 'other', 'shiny_starter_in_storage', '=', 'true', 'boolean'),
+        ('mission-003-reach-route102', 'fill-party', 'unlock', 1, 'item', 'Poké Ball', '>=', '1', 'integer'),
+        ('mission-003-reach-route102', 'fill-party', 'complete', 1, 'party', 'non_shiny_count', '>=', '6', 'integer'),
+        ('mission-003-reach-route102', 'fill-party', 'complete', 1, 'party', 'shiny_count', '=', '0', 'integer'),
         ('mission-003-reach-route102', 'ev-train-captured-pokemon', 'unlock', 1, 'other', 'shiny_starter_in_storage', '=', 'true', 'boolean'),
-        ('mission-003-reach-route102', 'ev-train-captured-pokemon', 'unlock', 1, 'party', 'count', '>=', '2', 'integer'),
+        ('mission-003-reach-route102', 'ev-train-captured-pokemon', 'unlock', 1, 'party', 'non_shiny_count', '>=', '6', 'integer'),
         ('mission-003-reach-route102', 'ev-train-captured-pokemon', 'complete', 1, 'party', 'minimum_level', '>=', '20', 'integer'),
-        ('mission-003-reach-route102', 'ev-train-captured-pokemon', 'complete', 1, 'party', 'count', '>=', '2', 'integer'),
+        ('mission-003-reach-route102', 'ev-train-captured-pokemon', 'complete', 1, 'party', 'non_shiny_count', '>=', '6', 'integer'),
         ('mission-003-reach-route102', 'ev-train-captured-pokemon', 'complete', 1, 'other', 'shiny_starter_in_storage', '=', 'true', 'boolean')
 )
 INSERT INTO step_conditions(
