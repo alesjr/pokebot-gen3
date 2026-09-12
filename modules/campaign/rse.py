@@ -7,7 +7,7 @@ from modules.campaign.team import pokemon_identity, select_campaign_party
 from modules.context import context
 from modules.items import get_item_bag, get_item_by_name
 from modules.keyboard import get_naming_screen_data, type_in_naming_screen
-from modules.map_data import MapRSE, PokemonCenter
+from modules.map_data import MapRSE
 from modules.memory import (
     GameState,
     game_has_started,
@@ -18,7 +18,6 @@ from modules.memory import (
 from modules.modes._interface import BotModeError
 from modules.modes.util import (
     ensure_facing_direction,
-    heal_in_pokemon_center,
     navigate_to,
     save_the_game,
     talk_to_npc,
@@ -161,13 +160,6 @@ def run_defeat_route103_rival(*, timeout_frames: int = 30_000) -> Generator:
             target_x=6,
             timeout_frames=5_000,
         )
-        yield from wait_for_player_avatar_to_be_controllable(
-            "B", stable_frames=120, wait_for_no_script=True, timeout_frames=timeout_frames
-        )
-
-    lead = get_party()[0]
-    if lead.current_hp < lead.total_hp:
-        yield from heal_in_pokemon_center(PokemonCenter.OldaleTown)
         yield from wait_for_player_avatar_to_be_controllable(
             "B", stable_frames=120, wait_for_no_script=True, timeout_frames=timeout_frames
         )

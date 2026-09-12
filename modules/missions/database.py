@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 CATALOG_VERSION = 1
 
 
@@ -50,6 +50,11 @@ class MissionPlan:
     code: str
     name: str
     game_code: str
+    training_target_level: int | None
+    training_map_group: int | None
+    training_map_number: int | None
+    training_tile_x: int | None
+    training_tile_y: int | None
     rules: dict[str, object]
     steps: tuple[MissionStep, ...]
 
@@ -100,7 +105,7 @@ class MissionsDatabase:
             "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL CHECK(version > 0))"
         )
         existing = self._connection.execute("SELECT version FROM schema_version").fetchone()
-        if existing is not None and existing[0] not in {1, 2, 3, 4, 5, 6, SCHEMA_VERSION}:
+        if existing is not None and existing[0] not in {1, 2, 3, 4, 5, 6, 7, SCHEMA_VERSION}:
             raise RuntimeError(
                 f"missions database schema version {existing[0]} is not supported; "
                 f"expected {SCHEMA_VERSION}"
@@ -139,10 +144,22 @@ class MissionsDatabase:
                 mission_id INTEGER NOT NULL,
                 game_id INTEGER NOT NULL,
                 sequence INTEGER NOT NULL CHECK(sequence >= 0),
+                training_target_level INTEGER CHECK(training_target_level > 0),
+                training_map_group INTEGER CHECK(training_map_group >= 0),
+                training_map_number INTEGER CHECK(training_map_number >= 0),
+                training_tile_x INTEGER,
+                training_tile_y INTEGER,
                 FOREIGN KEY(mission_id) REFERENCES missions(id) ON DELETE CASCADE,
                 FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE RESTRICT,
                 UNIQUE(mission_id, game_id),
-                UNIQUE(game_id, sequence)
+                UNIQUE(game_id, sequence),
+                CHECK(
+                    (training_map_group IS NULL AND training_map_number IS NULL
+                     AND training_tile_x IS NULL AND training_tile_y IS NULL)
+                    OR
+                    (training_map_group IS NOT NULL AND training_map_number IS NOT NULL
+                     AND training_tile_x IS NOT NULL AND training_tile_y IS NOT NULL)
+                )
             );
 
             CREATE TABLE IF NOT EXISTS mission_steps (
@@ -242,7 +259,7 @@ class MissionsDatabase:
                 ON campaign_rules(game_id, rule_key);
 
             INSERT INTO schema_version(version)
-            SELECT 7 WHERE NOT EXISTS (SELECT 1 FROM schema_version);
+            SELECT 8 WHERE NOT EXISTS (SELECT 1 FROM schema_version);
 
             COMMIT;
             """
@@ -261,6 +278,9 @@ class MissionsDatabase:
         if version == 6:
             self._migrate_catalog_to_v7()
             version = 7
+        if version == 7:
+            self._migrate_training_targets_to_v8()
+            version = 8
         if version != SCHEMA_VERSION:
             raise RuntimeError(
                 f"missions database schema version {version} is not supported; expected {SCHEMA_VERSION}"
@@ -301,6 +321,20 @@ class MissionsDatabase:
             CREATE INDEX IF NOT EXISTS idx_campaign_rules_game
                 ON campaign_rules(game_id, rule_key);
             UPDATE schema_version SET version = 7;
+            COMMIT;
+            """
+        )
+
+    def _migrate_training_targets_to_v8(self) -> None:
+        self._connection.executescript(
+            """
+            BEGIN IMMEDIATE;
+            ALTER TABLE mission_games ADD COLUMN training_target_level INTEGER;
+            ALTER TABLE mission_games ADD COLUMN training_map_group INTEGER;
+            ALTER TABLE mission_games ADD COLUMN training_map_number INTEGER;
+            ALTER TABLE mission_games ADD COLUMN training_tile_x INTEGER;
+            ALTER TABLE mission_games ADD COLUMN training_tile_y INTEGER;
+            UPDATE schema_version SET version = 8;
             COMMIT;
             """
         )
@@ -381,11 +415,16 @@ class MissionsDatabase:
         """Load the versioned built-in mission catalogue."""
         catalog_path = Path(__file__).with_name(f"catalog_v{CATALOG_VERSION}.sql")
         self._connection.executescript(catalog_path.read_text(encoding="utf-8"))
+        story_catalog_path = Path(__file__).with_name("catalog_rse_story_v1.sql")
+        self._connection.executescript(story_catalog_path.read_text(encoding="utf-8"))
 
     def mission_plan(self, game_code: str, mission_code: str) -> MissionPlan | None:
         mission = self._connection.execute(
             """
-            SELECT m.id, mg.id AS mission_game_id, m.code, m.name, g.code AS game_code
+            SELECT m.id, mg.id AS mission_game_id, m.code, m.name,
+                   g.code AS game_code, mg.training_target_level,
+                   mg.training_map_group, mg.training_map_number,
+                   mg.training_tile_x, mg.training_tile_y
             FROM missions AS m
             JOIN mission_games AS mg ON mg.mission_id = m.id
             JOIN games AS g ON g.id = mg.game_id
@@ -457,6 +496,11 @@ class MissionsDatabase:
             code=mission["code"],
             name=mission["name"],
             game_code=mission["game_code"],
+            training_target_level=mission["training_target_level"],
+            training_map_group=mission["training_map_group"],
+            training_map_number=mission["training_map_number"],
+            training_tile_x=mission["training_tile_x"],
+            training_tile_y=mission["training_tile_y"],
             rules=rules,
             steps=tuple(steps),
         )

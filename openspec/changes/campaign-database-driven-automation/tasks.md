@@ -31,21 +31,21 @@
 
 ## 5. Treino, batalha e recuperação
 
-- [ ] 5.1 Ler nível-alvo antes de cada missão e delegar treino dos combatentes abaixo dele ao modo existente; comportamento observável: level decide necessidade de treino, nunca seleção de combatente
-- [ ] 5.2 Usar battle handler e estratégia configurada existentes em encontros e treinadores incidentais; comportamento observável: Campaign retoma mesma etapa após vitória
-- [ ] 5.3 Integrar decisão de cura com saúde atual, último local de cura, enum de centros e busca de centro próximo existentes; comportamento observável: Campaign não usa loop paralelo de Pokémon Center
-- [ ] 5.4 Tratar whiteout relendo retorno do save e reavaliando treino antes de repetir confronto; comportamento observável: derrota não marca etapa concluída nem causa repetição imediata sem preparo
+- [x] 5.1 Ler nível-alvo antes de cada missão e delegar treino dos combatentes abaixo dele ao modo existente; comportamento observável: level decide necessidade de treino, nunca seleção de combatente
+- [x] 5.2 Usar battle handler e estratégia configurada existentes em encontros e treinadores incidentais; comportamento observável: Campaign retoma mesma etapa após vitória
+- [x] 5.3 Integrar decisão de cura com saúde atual, último local de cura, enum de centros e busca de centro próximo existentes; comportamento observável: Campaign não usa loop paralelo de Pokémon Center
+- [x] 5.4 Tratar whiteout relendo retorno do save e reavaliando treino antes de repetir confronto; comportamento observável: derrota não marca etapa concluída nem causa repetição imediata sem preparo
 
 ## 6. Catálogo completo Ruby, Sapphire e Emerald
 
-- [ ] 6.1 Cadastrar fluxo de Littleroot até Stone Badge com variantes RSE e referências a capacidades existentes; critério: cada etapa possui condição persistente de conclusão
-- [ ] 6.2 Cadastrar fluxo de Rustboro, Dewford, Slateport e Dynamo Badge com variantes RSE; critério: batalhas, HMs e deslocamentos obrigatórios vêm do catálogo
-- [ ] 6.3 Cadastrar fluxo de Fallarbor, Meteor Falls, Mt. Chimney, Lavaridge e Balance Badge com variantes RSE; critério: eventos exclusivos usam condições específicas por jogo
-- [ ] 6.4 Cadastrar fluxo de Weather Institute, Fortree, equipes Magma/Aqua e Feather Badge com variantes RSE; critério: nenhuma decisão de missão nova fica em branch Python por versão
-- [ ] 6.5 Cadastrar fluxo de Lilycove, bases Magma/Aqua, Mossdeep e Mind Badge com variantes RSE; critério: pré-requisitos de história e HM estão explícitos
-- [ ] 6.6 Cadastrar fluxo de lendário principal, Sootopolis e Rain Badge com mode de reset aplicável quando encontro puder ser shiny; critério: exceções de shiny-lock ficam explícitas no catálogo
-- [ ] 6.7 Cadastrar Victory Road, Elite Four e Champion com metas de treino e recuperação; critério: conclusão final deriva das flags/variáveis persistentes do save
-- [ ] 6.8 Cadastrar encontros únicos ou lendários pertencentes ao fluxo Campaign com tipo e mode correspondente; critério: catálogo não cria objetivo Living Dex
+- [x] 6.1 Cadastrar fluxo de Littleroot até Stone Badge com variantes RSE e referências a capacidades existentes; critério: cada etapa possui condição persistente de conclusão
+- [x] 6.2 Cadastrar fluxo de Rustboro, Dewford, Slateport e Dynamo Badge com variantes RSE; critério: batalhas, HMs e deslocamentos obrigatórios vêm do catálogo
+- [x] 6.3 Cadastrar fluxo de Fallarbor, Meteor Falls, Mt. Chimney, Lavaridge e Balance Badge com variantes RSE; critério: eventos exclusivos usam condições específicas por jogo
+- [x] 6.4 Cadastrar fluxo de Weather Institute, Fortree, equipes Magma/Aqua e Feather Badge com variantes RSE; critério: nenhuma decisão de missão nova fica em branch Python por versão
+- [x] 6.5 Cadastrar fluxo de Lilycove, bases Magma/Aqua, Mossdeep e Mind Badge com variantes RSE; critério: pré-requisitos de história e HM estão explícitos
+- [x] 6.6 Cadastrar fluxo de lendário principal, Sootopolis e Rain Badge com mode de reset aplicável quando encontro puder ser shiny; critério: exceções de shiny-lock ficam explícitas no catálogo
+- [x] 6.7 Cadastrar Victory Road, Elite Four e Champion com metas de treino e recuperação; critério: conclusão final deriva das flags/variáveis persistentes do save
+- [x] 6.8 Cadastrar encontros únicos ou lendários pertencentes ao fluxo Campaign com tipo e mode correspondente; critério: catálogo não cria objetivo Living Dex
 
 ## 7. Dashboard
 

@@ -39,17 +39,36 @@ ON CONFLICT(code) DO UPDATE SET
     category = excluded.category,
     sequence = excluded.sequence;
 
-INSERT INTO mission_games(mission_id, game_id, sequence)
-SELECT missions.id, games.id, missions.sequence
-FROM missions
-CROSS JOIN games
-WHERE missions.code IN (
-    'mission-001-first-starter',
-    'mission-002-first-poke-balls',
-    'mission-003-reach-route102'
+WITH mission_game_catalog(
+    mission_code, sequence, training_target_level,
+    training_map_group, training_map_number, training_tile_x, training_tile_y
+) AS (
+    VALUES
+        ('mission-001-first-starter', 1, NULL, 0, 16, 7, 15),
+        ('mission-002-first-poke-balls', 2, 5, 0, 16, 7, 15),
+        ('mission-003-reach-route102', 3, 5, 0, 16, 7, 15)
 )
-AND games.code IN ('ruby', 'sapphire', 'emerald')
-ON CONFLICT(mission_id, game_id) DO UPDATE SET sequence = excluded.sequence;
+INSERT INTO mission_games(
+    mission_id, game_id, sequence, training_target_level,
+    training_map_group, training_map_number, training_tile_x, training_tile_y
+)
+SELECT missions.id, games.id, mission_game_catalog.sequence,
+       mission_game_catalog.training_target_level,
+       mission_game_catalog.training_map_group,
+       mission_game_catalog.training_map_number,
+       mission_game_catalog.training_tile_x,
+       mission_game_catalog.training_tile_y
+FROM mission_game_catalog
+JOIN missions ON missions.code = mission_game_catalog.mission_code
+CROSS JOIN games
+WHERE games.code IN ('ruby', 'sapphire', 'emerald')
+ON CONFLICT(mission_id, game_id) DO UPDATE SET
+    sequence = excluded.sequence,
+    training_target_level = excluded.training_target_level,
+    training_map_group = excluded.training_map_group,
+    training_map_number = excluded.training_map_number,
+    training_tile_x = excluded.training_tile_x,
+    training_tile_y = excluded.training_tile_y;
 
 WITH rule_catalog(rule_key, value, value_type, description) AS (
     VALUES
@@ -59,6 +78,8 @@ WITH rule_catalog(rule_key, value, value_type, description) AS (
         ('starter.shiny_required', 'true', 'boolean', 'O primeiro starter deve ser shiny.'),
         ('first_wild.capture_required', 'true', 'boolean', 'Capturar o primeiro encontro selvagem após obter Poké Balls.'),
         ('training.before_mission', 'true', 'boolean', 'Treinar antes das missões até o nível requerido.'),
+        ('training.whiteout_level_increment', '1', 'integer', 'Elevar em um nível o alvo mínimo após cada whiteout.'),
+        ('recovery.heal_before_risk', 'true', 'boolean', 'Curar equipe abaixo do limite seguro antes de prosseguir.'),
         ('party.target_size', '6', 'integer', 'Capturar até formar equipe com seis Pokémon.'),
         ('party.combat_score', 'base_stats_plus_ivs', 'text', 'Comparar potencial por status base e IVs.'),
         ('party.combat_level_weight', '0', 'integer', 'Nível não participa da comparação de potencial.'),

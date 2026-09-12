@@ -10,6 +10,11 @@ from modules.campaign import (
     save_campaign_checkpoint,
 )
 from modules.campaign.capabilities import CampaignCapabilityResolver, campaign_capability
+from modules.campaign.recovery import (
+    find_recovery_pokemon_center,
+    heal_party_and_return,
+    party_needs_healing,
+)
 from modules.campaign.rse import run_organize_party_at_pc
 from modules.battle_state import BattleOutcome, EncounterType
 from modules.battle_strategies import BattleStrategy
@@ -19,6 +24,7 @@ from modules.encounter import EncounterInfo
 from modules.memory import get_event_flag
 from modules.map_data import PokemonCenter, get_map_enum
 from modules.missions import MissionsDatabase
+from modules.missions.database import MissionPlan
 from modules.modes._asserts import (
     assert_boxes_or_party_can_fit_pokemon,
     assert_player_has_poke_balls,
@@ -31,7 +37,6 @@ from modules.modes.starters import (
     reach_rse_starter_bag,
 )
 from modules.modes.util import heal_in_pokemon_center, save_the_game, spin
-from modules.modes.util.map import find_closest_pokemon_center
 from modules.player import get_player_location
 from modules.pokemon_party import get_party
 from modules.runtime import get_base_path
@@ -55,6 +60,12 @@ class CampaignMode(BotMode):
         self._defer_shiny_deposit = False
         self._required_hms: list[str] = []
         self._temporary_required_species: list[str] = []
+        self._training_target_level: int | None = None
+        self._training_location: tuple[int, int, int, int] | None = None
+        self._healing_pending = False
+        self._recovery_in_progress = False
+        self._whiteout_pending = False
+        self._whiteout_training_target: int | None = None
         self._trainer_name = context.profile.trainer_name or os.environ.get("POKEBOT_CAMPAIGN_TRAINER_NAME", "Alesjr")
         self._trainer_gender = context.profile.trainer_gender
         self._starter = context.profile.starter or os.environ.get("POKEBOT_CAMPAIGN_STARTER", "Mudkip")
@@ -66,7 +77,8 @@ class CampaignMode(BotMode):
         action = self._campaign_battle_action(encounter)
         if action is not None:
             return action
-        return self._forward("on_battle_started", encounter, default=None)
+        action = self._forward("on_battle_started", encounter, default=None)
+        return action if action is not None else BattleAction.Fight
 
     def on_navigation_battle_started(
         self, encounter: EncounterInfo | None
@@ -74,10 +86,22 @@ class CampaignMode(BotMode):
         action = self._campaign_battle_action(encounter)
         if action is not None:
             return action
-        return self._forward("on_navigation_battle_started", encounter, default=None)
+        action = self._forward(
+            "on_navigation_battle_started", encounter, default=None
+        )
+        if action is None:
+            action = self._forward("on_battle_started", encounter, default=None)
+        return action if action is not None else BattleAction.Fight
 
     def on_battle_ended(self, outcome: BattleOutcome) -> None:
         self._forward("on_battle_ended", outcome, default=None)
+        if (
+            not self._recovery_in_progress
+            and self._active_capability is None
+            and bool(self._campaign_rules.get("recovery.heal_before_risk", False))
+            and party_needs_healing()
+        ):
+            self._healing_pending = True
         if self._pending_shiny_personality is not None:
             if outcome is BattleOutcome.Caught:
                 self._shiny_deposit_pending = any(
@@ -87,7 +111,27 @@ class CampaignMode(BotMode):
             self._pending_shiny_personality = None
 
     def on_whiteout(self) -> bool:
-        return self._forward("on_whiteout", default=False)
+        if self._forward("on_whiteout", default=False):
+            self._healing_pending = False
+            return True
+        combatants = [
+            pokemon for pokemon in get_party().non_eggs if not pokemon.is_shiny
+        ]
+        if not combatants:
+            raise BotModeError("Campaign cannot recover from whiteout without combatants.")
+        increment = self._campaign_rules.get("training.whiteout_level_increment")
+        if not isinstance(increment, int) or increment <= 0:
+            raise BotModeError(
+                "Campaign catalog must define a positive "
+                "training.whiteout_level_increment."
+            )
+        current_minimum = min(pokemon.level for pokemon in combatants)
+        self._whiteout_training_target = max(
+            self._training_target_level or current_minimum,
+            current_minimum + increment,
+        )
+        self._whiteout_pending = True
+        return True
 
     def on_pokemon_evolving_after_battle(self, pokemon, party_index: int) -> bool:
         return self._forward(
@@ -138,6 +182,18 @@ class CampaignMode(BotMode):
                     yield
                     continue
                 self._campaign_rules = mission.rules
+                self._training_target_level = mission.training_target_level
+                self._training_location = self._mission_training_location(mission)
+                if bool(
+                    self._campaign_rules.get("recovery.heal_before_risk", False)
+                ) and party_needs_healing():
+                    self._recovery_in_progress = True
+                    try:
+                        yield from heal_party_and_return()
+                    finally:
+                        self._recovery_in_progress = False
+                if bool(self._campaign_rules.get("training.before_mission", False)):
+                    yield from self._train_party_to_target(mission.training_target_level)
                 yield from executor.run(mission)
                 self._active_capability = None
                 last_completed_mission = mission
@@ -222,9 +278,47 @@ class CampaignMode(BotMode):
     def _ev_train_captured_pokemon(self, target_level: int) -> Generator:
         ev_train_mode = EVTrainMode()
         yield from self._run_with_delegate(
-            ev_train_mode, ev_train_mode.run_until_party_level(target_level)
+            ev_train_mode,
+            ev_train_mode.run_until_party_level(target_level, include_shiny=False),
         )
         yield from save_campaign_checkpoint(3)
+
+    @staticmethod
+    def _mission_training_location(
+        mission: MissionPlan,
+    ) -> tuple[int, int, int, int] | None:
+        values = (
+            mission.training_map_group,
+            mission.training_map_number,
+            mission.training_tile_x,
+            mission.training_tile_y,
+        )
+        return tuple(values) if all(value is not None for value in values) else None
+
+    def _train_party_to_target(self, target_level: int | None) -> Generator:
+        combatants = [
+            pokemon for pokemon in get_party().non_eggs if not pokemon.is_shiny
+        ]
+        if target_level is None or not combatants:
+            return
+        if all(pokemon.level >= target_level for pokemon in combatants):
+            return
+        if self._training_location is None:
+            raise BotModeError("Campaign catalog must define a training location.")
+
+        source_map, source_coordinates = get_player_location()
+        yield from navigate_to_catalog_location(*self._training_location)
+        ev_train_mode = EVTrainMode()
+        yield from self._run_with_delegate(
+            ev_train_mode,
+            ev_train_mode.run_until_party_level(target_level, include_shiny=False),
+        )
+        yield from navigate_to_catalog_location(
+            source_map.value[0],
+            source_map.value[1],
+            source_coordinates[0],
+            source_coordinates[1],
+        )
 
     def _run_with_delegate(self, delegate: object, generator: Generator) -> Generator:
         previous = self._active_capability
@@ -268,11 +362,29 @@ class CampaignMode(BotMode):
             self._shiny_deposit_pending = False
 
     def _before_capability_resume(self) -> Generator:
+        if self._whiteout_pending:
+            target_level = self._whiteout_training_target
+            self._whiteout_pending = False
+            self._healing_pending = False
+            self._recovery_in_progress = True
+            try:
+                yield from self._train_party_to_target(target_level)
+            finally:
+                self._recovery_in_progress = False
+            return True
+        if self._healing_pending and not self._shiny_deposit_pending:
+            self._recovery_in_progress = True
+            try:
+                yield from heal_party_and_return()
+                self._healing_pending = False
+            finally:
+                self._recovery_in_progress = False
+            return False
         if self._defer_shiny_deposit or not self._shiny_deposit_pending:
-            return
+            return False
         if not self._party_has_shiny():
             self._shiny_deposit_pending = False
-            return
+            return False
         terminal_tile = self._campaign_rules.get("shiny.pc_terminal_tile")
         if (
             not isinstance(terminal_tile, list)
@@ -285,7 +397,7 @@ class CampaignMode(BotMode):
         previous = self._active_capability
         self._active_capability = None
         try:
-            yield from heal_in_pokemon_center(find_closest_pokemon_center())
+            yield from heal_in_pokemon_center(find_recovery_pokemon_center())
             yield from run_organize_party_at_pc(
                 *terminal_tile,
                 storage_required=bool(
@@ -299,6 +411,7 @@ class CampaignMode(BotMode):
                 temporary_required_species=self._temporary_required_species,
             )
             self._shiny_deposit_pending = False
+            self._healing_pending = False
             yield from navigate_to_catalog_location(
                 source_map.value[0],
                 source_map.value[1],
@@ -307,6 +420,7 @@ class CampaignMode(BotMode):
             )
         finally:
             self._active_capability = previous
+        return False
 
     def _on_step_started(self, step) -> None:
         self._required_hms = list(step.action_params.get("required_hms", []))

@@ -211,6 +211,8 @@ class EVTrainMode(BotMode):
     def run_until_party_level(
         self,
         target_level: int,
+        *,
+        include_shiny: bool = True,
     ) -> Generator:
         if target_level <= 0:
             raise BotModeError("EV Train campaign target level must be positive.")
@@ -224,11 +226,16 @@ class EVTrainMode(BotMode):
         training_spot_coordinates = training_spot.local_position
         pokemon_center = find_closest_pokemon_center(training_spot)
 
-        while any(pokemon.level < target_level for pokemon in get_party().non_eggs):
+        needs_training = lambda pokemon: (
+            not pokemon.is_egg
+            and (include_shiny or not pokemon.is_shiny)
+            and pokemon.level < target_level
+        )
+        while any(needs_training(pokemon) for pokemon in get_party()):
             target_index = next(
                 index
                 for index, pokemon in enumerate(get_party())
-                if not pokemon.is_egg and pokemon.level < target_level
+                if needs_training(pokemon)
             )
             if target_index != 0:
                 yield from change_lead_party_pokemon(target_index)

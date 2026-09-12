@@ -152,6 +152,23 @@ class CartridgeStateReader:
                 pokemon.is_shiny and pokemon.species.name in expected_species
                 for pokemon in owned
             )
+        if source_type == "other" and source_key.startswith(
+            ("owns_species:", "owns_shiny_species:")
+        ):
+            condition, _, species_name = source_key.partition(":")
+            from modules.pokemon_party import get_party
+            from modules.pokemon_storage import get_pokemon_storage
+
+            owned = list(get_party()) + [
+                slot.pokemon
+                for box in get_pokemon_storage().boxes
+                for slot in box.slots
+            ]
+            return any(
+                pokemon.species.name == species_name
+                and (condition != "owns_shiny_species" or pokemon.is_shiny)
+                for pokemon in owned
+            )
         raise BotModeError(f"Unsupported campaign condition source: {source_type}:{source_key}")
 
 
@@ -219,7 +236,18 @@ class CampaignExecutor:
             )
             if self._on_step_started is not None:
                 self._on_step_started(step)
-            yield from self._run_capability(capability)
+            while (yield from self._run_capability(capability)):
+                complete, observations = self._evaluate(
+                    step, "complete", required=True
+                )
+                self._database.record_observations(
+                    self._profile, mission.mission_game_id, observations
+                )
+                if complete:
+                    break
+                capability = self._capability_resolver.resolve(
+                    step.action, step.action_params, step, mission.rules
+                )
             complete, observations = self._evaluate(step, "complete", required=True)
             self._database.record_observations(
                 self._profile, mission.mission_game_id, observations
@@ -228,7 +256,21 @@ class CampaignExecutor:
                 recovery = self._capability_resolver.resolve(
                     step.recovery_action, step.recovery_params, step, mission.rules
                 )
-                yield from self._run_capability(recovery)
+                while (yield from self._run_capability(recovery)):
+                    complete, observations = self._evaluate(
+                        step, "complete", required=True
+                    )
+                    self._database.record_observations(
+                        self._profile, mission.mission_game_id, observations
+                    )
+                    if complete:
+                        break
+                    recovery = self._capability_resolver.resolve(
+                        step.recovery_action,
+                        step.recovery_params,
+                        step,
+                        mission.rules,
+                    )
                 complete, observations = self._evaluate(step, "complete", required=True)
                 self._database.record_observations(
                     self._profile, mission.mission_game_id, observations
@@ -252,12 +294,15 @@ class CampaignExecutor:
             generator = capability.run()
             while True:
                 if self._before_capability_resume is not None:
-                    yield from self._before_capability_resume()
+                    restart_required = yield from self._before_capability_resume()
+                    if restart_required:
+                        return True
                 try:
                     yielded = next(generator)
                 except StopIteration:
                     break
                 yield yielded
+            return False
         finally:
             if self._on_capability_changed is not None:
                 self._on_capability_changed(None)

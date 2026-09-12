@@ -17,6 +17,9 @@ from ._asserts import (
 from ._interface import BattleAction, BotMode, BotModeError
 from .util import (
     soft_reset,
+    ensure_facing_direction,
+    navigate_to,
+    save_the_game,
     wait_for_n_frames,
     wait_for_task_to_start_and_finish,
     wait_for_unique_rng_value,
@@ -124,20 +127,55 @@ class StaticSoftResetsMode(BotMode):
         self._controller: StaticSoftResetController | None = None
 
     def on_battle_started(self, encounter: EncounterInfo | None) -> BattleAction | None:
+        if self._controller is None:
+            return BattleAction.Fight
         return self._controller.on_battle_started(encounter)
 
     def on_battle_ended(self, outcome: BattleOutcome) -> None:
-        self._controller.on_battle_ended(outcome)
+        if self._controller is not None:
+            self._controller.on_battle_ended(outcome)
 
     def run(
         self,
         *,
         shiny_only: bool = False,
         stop_when_caught: bool = False,
+        target_name: str | None = None,
+        encounter_type: str = "static",
+        shiny_locked: bool = False,
+        solve_puzzle: bool = False,
     ) -> Generator:
-        encounter = get_targeted_encounter()
+        if encounter_type != "static":
+            raise BotModeError(f"Unsupported encounter type for Static Soft Resets: {encounter_type}.")
+        if shiny_locked:
+            shiny_only = False
+        if target_name is not None:
+            encounter = next(
+                (
+                    candidate
+                    for candidate in get_static_encounters()
+                    if target_name in candidate.name.split("/")
+                ),
+                None,
+            )
+            if encounter is None:
+                raise BotModeError(f"Unknown static encounter for this game: {target_name}.")
+            if solve_puzzle:
+                from modules.modes.puzzle_solver import PuzzleSolverMode
+
+                yield from navigate_to(MapRSE.SKY_PILLAR_OUTSIDE, (10, 15))
+                yield from PuzzleSolverMode().run(return_to_caller=True)
+            yield from navigate_to(
+                encounter.map,
+                (encounter.coordinates[0], encounter.coordinates[1] + 1),
+            )
+            yield from ensure_facing_direction("Up")
+            yield from save_the_game()
+        else:
+            encounter = get_targeted_encounter()
         self._controller = StaticSoftResetController(
             encounter,
+            auto_catch=stop_when_caught,
             qualifies=(lambda candidate: candidate.is_shiny) if shiny_only else None,
         )
         yield from self._controller.run(stop_when_caught=stop_when_caught)
