@@ -147,7 +147,7 @@ class CampaignMode(BotMode):
             mission=None,
             step=None,
             step_order=None,
-            objective="Lendo campanha e save atual.",
+            objective="Reading campaign and current save.",
             pause_reason=None,
         )
         try:
@@ -192,7 +192,7 @@ class CampaignMode(BotMode):
                 )
                 if mission is None:
                     if last_completed_mission is None:
-                        context.message = "Nenhuma missão pendente conforme o save atual."
+                        context.message = "No pending missions according to the current save."
                     self._publish_campaign_state(
                         mission=None,
                         step=None,
@@ -209,7 +209,7 @@ class CampaignMode(BotMode):
                     mission=mission.name,
                     step=None,
                     step_order=None,
-                    objective=f"Preparando equipe para {mission.name}.",
+                    objective=f"Preparing party for {mission.name}.",
                     pause_reason=None,
                 )
                 if bool(
@@ -225,7 +225,7 @@ class CampaignMode(BotMode):
                 yield from executor.run(mission)
                 self._active_capability = None
                 last_completed_mission = mission
-                context.message = f"{mission.name} concluída"
+                context.message = f"{mission.name} completed"
                 self._publish_campaign_state(
                     mission=mission.name,
                     step=None,

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -9,7 +9,7 @@
 <body>
   <header class="topbar">
     <strong><span>G3</span> BOT</strong>
-    <label>Jogo
+    <label><span data-i18n="game">Game</span>
       <select id="game">
         <option>Emerald</option><option>Ruby</option><option>Sapphire</option>
         <option>FireRed</option><option>LeafGreen</option>
@@ -23,30 +23,30 @@
 
   <main>
     <aside class="profile-panel panel">
-      <h2>Instância</h2>
-      <dl><dt>Jogo</dt><dd id="instanceGame">—</dd><dt>Profile</dt><dd id="instanceProfile">—</dd><dt>Frame</dt><dd id="frame">—</dd><dt>FPS</dt><dd id="fps">—</dd></dl>
-      <button id="startProfile" class="ok">▶ Iniciar profile</button>
-      <button id="stopProfile">■ Parar profile</button>
-      <button id="newProfile" class="ok">Novo profile</button>
-      <button id="resetProfile" class="danger">Resetar profile</button>
-      <button id="removeProfile" class="danger">Remover profile</button>
-      <label>Save state
+      <h2 data-i18n="instance">Instance</h2>
+      <dl><dt data-i18n="game">Game</dt><dd id="instanceGame">—</dd><dt>Profile</dt><dd id="instanceProfile">—</dd><dt>Frame</dt><dd id="frame">—</dd><dt>FPS</dt><dd id="fps">—</dd></dl>
+      <button id="startProfile" class="ok" data-i18n="start_profile">▶ Start profile</button>
+      <button id="stopProfile" data-i18n="stop_profile">■ Stop profile</button>
+      <button id="newProfile" class="ok" data-i18n="new_profile">New profile</button>
+      <button id="resetProfile" class="danger" data-i18n="reset_profile">Reset profile</button>
+      <button id="removeProfile" class="danger" data-i18n="remove_profile">Remove profile</button>
+      <label><span data-i18n="save_state">Save state</span>
         <select id="saveStates"></select>
       </label>
-      <button id="loadState">Carregar estado</button>
+      <button id="loadState" data-i18n="load_state">Load state</button>
     </aside>
 
     <section class="operation">
       <div class="emulator panel">
-        <div class="screen"><img id="screen" alt="Tela do Game Boy Advance"></div>
+        <div class="screen"><img id="screen" alt="Game Boy Advance screen" data-i18n-alt="gba_screen_alt"></div>
         <div class="toolbar">
-          <button data-control="reset">↻ Resetar</button>
-          <button data-control="toggle_video">▣ Tela</button>
-          <button data-control="pause">Ⅱ Manual</button>
-          <button data-control="save_state">◆ Salvar estado</button>
-          <label>Velocidade
+          <button data-control="reset" data-i18n="reset">↻ Reset</button>
+          <button data-control="toggle_video" data-i18n="screen">▣ Screen</button>
+          <button data-control="pause" data-i18n="manual">Ⅱ Manual</button>
+          <button data-control="save_state" data-i18n="save_state_action">◆ Save state</button>
+          <label><span data-i18n="speed">Speed</span>
             <select id="speed">
-              <option value="0">Máxima</option><option value="1">1×</option><option value="2">2×</option>
+              <option value="0" data-i18n="maximum">Maximum</option><option value="1">1×</option><option value="2">2×</option>
               <option value="3">3×</option><option value="4">4×</option><option value="8">8×</option>
               <option value="16">16×</option><option value="32">32×</option>
             </select>
@@ -54,56 +54,57 @@
         </div>
       </div>
       <section class="activity panel">
-        <h2>Atividade atual</h2>
+        <h2 data-i18n="current_activity">Current activity</h2>
         <dl>
-          <dt>Missão</dt><dd id="mission">Sem missão ativa</dd>
-          <dt>Etapa</dt><dd id="campaignStep">—</dd>
-          <dt>Objetivo</dt><dd id="objective">Aguardando instância.</dd>
-          <dt>Pausa</dt><dd id="pauseReason">—</dd>
+          <dt data-i18n="mission">Mission</dt><dd id="mission" data-i18n="no_active_mission">No active mission</dd>
+          <dt data-i18n="step">Step</dt><dd id="campaignStep">—</dd>
+          <dt data-i18n="objective">Objective</dt><dd id="objective" data-i18n="waiting_instance">Waiting for instance.</dd>
+          <dt data-i18n="pause">Pause</dt><dd id="pauseReason">—</dd>
         </dl>
       </section>
       <section class="log panel">
-        <div class="panel-head"><h2>Log do bot</h2><select id="logFilter"><option value="all">Todos</option><option value="info">Info</option><option value="warning">Warning</option><option value="error">Error</option><option value="encounter">Encontros</option><option value="capture">Capturas</option></select></div>
-        <pre id="botLog">Aguardando logs...</pre>
+        <div class="panel-head"><h2 data-i18n="bot_log">Bot log</h2><select id="logFilter"><option value="all" data-i18n="all">All</option><option value="info">Info</option><option value="warning">Warning</option><option value="error">Error</option><option value="encounter" data-i18n="encounters">Encounters</option><option value="capture" data-i18n="captures">Captures</option></select></div>
+        <pre id="botLog" data-i18n="waiting_logs">Waiting for logs...</pre>
       </section>
     </section>
 
     <aside class="side">
-      <section class="modes panel"><h2>Modo do bot</h2><select id="modes" aria-label="Modo do bot"></select></section>
+      <section class="modes panel"><h2 data-i18n="bot_mode">Bot mode</h2><select id="modes" aria-label="Bot mode" data-i18n-aria-label="bot_mode"></select></section>
       <section class="controls panel">
-        <h2>Controles GBA</h2>
+        <h2 data-i18n="gba_controls">GBA controls</h2>
         <div class="dpad"><button data-button="Up">▲</button><button data-button="Left">◀</button><button data-button="Down">▼</button><button data-button="Right">▶</button></div>
         <div class="ab"><button data-button="B">B</button><button data-button="A">A</button></div>
         <div class="system"><button data-button="L">L</button><button data-button="Select">SELECT</button><button data-button="Start">START</button><button data-button="R">R</button></div>
       </section>
-      <section class="recent panel"><h2>Últimos encontrados</h2><div id="encounters"></div></section>
+      <section class="recent panel"><h2 data-i18n="recent_encounters">Recent encounters</h2><div id="encounters"></div></section>
     </aside>
 
     <section class="system-log panel">
-      <h2>Log de sistema e erros</h2>
-      <pre id="errorLog">Sem erros recentes.</pre>
+      <h2 data-i18n="system_error_log">System and error log</h2>
+      <pre id="errorLog" data-i18n="no_recent_errors">No recent errors.</pre>
     </section>
   </main>
 
   <dialog id="profileDialog">
     <form method="dialog">
-      <h2>Novo profile</h2>
-      <label>Nome do profile<input id="profileName" maxlength="80" required></label>
-      <label>Nome no jogo<input id="trainerName" maxlength="7" required></label>
-      <label>Gênero
-        <select id="trainerGender"><option value="male">Masculino</option><option value="female">Feminino</option></select>
+      <h2 data-i18n="new_profile">New profile</h2>
+      <label><span data-i18n="profile_name">Profile name</span><input id="profileName" maxlength="80" required></label>
+      <label><span data-i18n="in_game_name">In-game name</span><input id="trainerName" maxlength="7" required></label>
+      <label><span data-i18n="gender">Gender</span>
+        <select id="trainerGender"><option value="male" data-i18n="male">Male</option><option value="female" data-i18n="female">Female</option></select>
       </label>
       <label>Starter<select id="starter" required></select></label>
-      <div><button value="cancel" formnovalidate>Cancelar</button><button id="createProfile" value="default" class="ok">Criar</button></div>
+      <div><button value="cancel" formnovalidate data-i18n="cancel">Cancel</button><button id="createProfile" value="default" class="ok" data-i18n="create">Create</button></div>
     </form>
   </dialog>
   <dialog id="alertDialog">
     <form method="dialog">
-      <h2>Aviso</h2>
+      <h2 data-i18n="warning">Warning</h2>
       <p id="alertMessage"></p>
       <div><button value="default" class="ok">OK</button></div>
     </form>
   </dialog>
+  <script src="/fleet/assets/i18n.js"></script>
   <script src="/fleet/assets/app.js"></script>
 </body>
 </html>
