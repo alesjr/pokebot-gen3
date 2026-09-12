@@ -112,7 +112,7 @@ def get_party() -> Party:
     :return: The player's party of Pokémon.
     """
 
-    if state_cache.party.age_in_frames == 0:
+    if state_cache.party.age_in_frames == 0 and state_cache.party.value is not None:
         return state_cache.party.value
 
     def read_party_pokemon(party_index: int) -> PartyPokemon | None:
