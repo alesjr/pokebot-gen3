@@ -132,7 +132,7 @@ WITH step_catalog(
         ('mission-003-reach-route102', 'reach-oldale', 3, 'Atravessar a Route 101 até Oldale', NULL,
          'function:modules.campaign.engine:navigate_to_catalog_location', '{"map_group":"$step.map_group","map_number":"$step.map_number","tile_x":"$step.tile_x","tile_y":"$step.tile_y"}', 0, 10, 'OLDALE_TOWN', NULL, 10, 18, NULL, NULL),
         ('mission-003-reach-route102', 'reach-route102', 4, 'Chegar à Route 102', NULL,
-         'function:campaign:_reach_route102', '{"map_group":"$step.map_group","map_number":"$step.map_number","tile_x":"$step.tile_x","tile_y":"$step.tile_y"}', 0, 17, 'ROUTE102', NULL, 49, 10, NULL, NULL),
+         'function:modules.campaign.engine:navigate_to_catalog_location', '{"map_group":"$step.map_group","map_number":"$step.map_number","tile_x":"$step.tile_x","tile_y":"$step.tile_y"}', 0, 17, 'ROUTE102', NULL, 49, 10, NULL, NULL),
         ('mission-003-reach-route102', 'reach-route102-grass', 5, 'Entrar na grama da Route 102', NULL,
          'function:modules.campaign.engine:navigate_to_catalog_location', '{"map_group":"$step.map_group","map_number":"$step.map_number","tile_x":"$step.tile_x","tile_y":"$step.tile_y"}', 0, 17, 'ROUTE102', NULL, 39, 5, NULL, NULL),
         ('mission-003-reach-route102', 'catch-new-route102-pokemon', 6, 'Capturar o primeiro Pokémon selvagem', NULL,
@@ -149,7 +149,7 @@ WITH step_catalog(
          0, 17, 'ROUTE102', NULL, 39, 5, NULL, NULL),
         ('mission-003-reach-route102', 'ev-train-captured-pokemon', 11, 'Treinar capturados até o nível 20',
          'first_gym_max_level=15; level_margin=5; target_level=20',
-         'function:campaign:_ev_train_captured_pokemon', '{"target_level":20}',
+         'mode:EV Train:run_until_party_level', '{"constructor":{},"arguments":{"target_level":20,"include_shiny":false}}',
          0, 17, 'ROUTE102', NULL, 39, 5, NULL, NULL)
 )
 INSERT INTO mission_steps(

@@ -49,12 +49,12 @@
 
 ## 7. Dashboard
 
-- [ ] 7.1 Manter filtro de profiles pelo jogo e início do profile/save escolhido; comportamento observável: jogo sem profile não inicia ROM diferente
-- [ ] 7.2 Manter seleção baseada em modes registrados e troca entre Manual, Campaign e modos disponíveis; comportamento observável: modo indisponível é rejeitado sem fallback silencioso
-- [ ] 7.3 Expor missão, etapa, objetivo e motivo de pausa fornecidos pelo Campaign no estado existente; comportamento observável: frontend apenas apresenta estado recebido, sem inferir regra
+- [x] 7.1 Manter filtro de profiles pelo jogo e início do profile/save escolhido; comportamento observável: jogo sem profile não inicia ROM diferente
+- [x] 7.2 Manter seleção baseada em modes registrados e troca entre Manual, Campaign e modos disponíveis; comportamento observável: modo indisponível é rejeitado sem fallback silencioso
+- [x] 7.3 Expor missão, etapa, objetivo e motivo de pausa fornecidos pelo Campaign no estado existente; comportamento observável: frontend apenas apresenta estado recebido, sem inferir regra
 
 ## 8. Remoção de duplicações
 
-- [ ] 8.1 Remover TODO e lógica parcial da captura Route 102 substituídos pela execução declarativa e capacidades existentes; confirmar ausência de segundo fluxo de captura
-- [ ] 8.2 Remover branches, helpers e imports Campaign tornados sem uso pela delegação genérica; confirmar que módulos originais de batalha, cura, PC, starter e treino continuam sendo os pontos únicos de implementação
-- [ ] 8.3 Revisar diff final somente contra escopo desta mudança; confirmar ausência de Living Dex, battle policy, battle handler paralelo, `pokecenter_loop` novo, framework, dependência ou infraestrutura adicional
+- [x] 8.1 Remover TODO e lógica parcial da captura Route 102 substituídos pela execução declarativa e capacidades existentes; confirmar ausência de segundo fluxo de captura
+- [x] 8.2 Remover branches, helpers e imports Campaign tornados sem uso pela delegação genérica; confirmar que módulos originais de batalha, cura, PC, starter e treino continuam sendo os pontos únicos de implementação
+- [x] 8.3 Revisar diff final somente contra escopo desta mudança; confirmar ausência de Living Dex, battle policy, battle handler paralelo, `pokecenter_loop` novo, framework, dependência ou infraestrutura adicional

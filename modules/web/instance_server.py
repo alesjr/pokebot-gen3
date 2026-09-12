@@ -130,11 +130,23 @@ def _save_states() -> list[str]:
 
 def _state() -> dict:
     emulator = context.emulator
+    campaign = dict(context.campaign_state)
+    if context.bot_mode != "Campaign" and not (
+        context.bot_mode == "Manual" and campaign.get("pause_reason") is not None
+    ):
+        campaign = {
+            "mission": None,
+            "step": None,
+            "step_order": None,
+            "objective": None,
+            "pause_reason": None,
+        }
     return {
         "profile": context.profile.path.name,
         "game": _game_name(),
         "mode": context.bot_mode,
         "message": context.message,
+        "campaign": campaign,
         "frame": emulator.get_frame_count(),
         "fps": emulator.get_current_fps(),
         "speed": context.emulation_speed,
@@ -256,12 +268,18 @@ def create_instance_app() -> web.Application:
         return web.json_response({"name": profile.path.name, "game": _game_name(profile.rom)}, status=201)
 
     async def start_profile_route(request: web.Request) -> web.Response:
-        name = str((await request.json()).get("name", ""))
+        payload = await request.json()
+        name = str(payload.get("name", ""))
+        game = str(payload.get("game", ""))
         if not name or Path(name).name != name:
             raise web.HTTPBadRequest(text="invalid profile name")
+        if not game:
+            raise web.HTTPBadRequest(text="selected game is required")
         profile = next((item for item in list_available_profiles() if item.path.name == name), None)
         if profile is None:
             raise web.HTTPNotFound(text="profile not found")
+        if _game_name(profile.rom) != game:
+            raise web.HTTPConflict(text="profile does not belong to selected game")
         if context.profile is not None and name == context.profile.path.name:
             return web.json_response({"message": "profile already running"})
 

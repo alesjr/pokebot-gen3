@@ -52,6 +52,13 @@ class BotContext:
         self.testing: bool = False
 
         self._current_message: str = ""
+        self.campaign_state: dict[str, str | int | None] = {
+            "mission": None,
+            "step": None,
+            "step_order": None,
+            "objective": None,
+            "pause_reason": None,
+        }
 
         self.controller_stack: list[Generator] = []
         self.debug_action_stack: list[str] = []

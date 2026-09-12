@@ -143,6 +143,20 @@ class CampaignMode(BotMode):
         return callback(*args) if callable(callback) else default
 
     def run(self) -> Generator:
+        self._publish_campaign_state(
+            mission=None,
+            step=None,
+            step_order=None,
+            objective="Lendo campanha e save atual.",
+            pause_reason=None,
+        )
+        try:
+            yield from self._run_campaign()
+        except BotModeError as error:
+            self._publish_campaign_state(pause_reason=str(error))
+            raise
+
+    def _run_campaign(self) -> Generator:
         if not context.rom.is_rse:
             raise BotModeError("Campaign supports only Ruby, Sapphire and Emerald.")
         game_code = (
@@ -179,11 +193,25 @@ class CampaignMode(BotMode):
                 if mission is None:
                     if last_completed_mission is None:
                         context.message = "Nenhuma missão pendente conforme o save atual."
+                    self._publish_campaign_state(
+                        mission=None,
+                        step=None,
+                        step_order=None,
+                        objective=context.message,
+                        pause_reason=None,
+                    )
                     yield
                     continue
                 self._campaign_rules = mission.rules
                 self._training_target_level = mission.training_target_level
                 self._training_location = self._mission_training_location(mission)
+                self._publish_campaign_state(
+                    mission=mission.name,
+                    step=None,
+                    step_order=None,
+                    objective=f"Preparando equipe para {mission.name}.",
+                    pause_reason=None,
+                )
                 if bool(
                     self._campaign_rules.get("recovery.heal_before_risk", False)
                 ) and party_needs_healing():
@@ -198,6 +226,13 @@ class CampaignMode(BotMode):
                 self._active_capability = None
                 last_completed_mission = mission
                 context.message = f"{mission.name} concluída"
+                self._publish_campaign_state(
+                    mission=mission.name,
+                    step=None,
+                    step_order=None,
+                    objective=context.message,
+                    pause_reason=None,
+                )
                 yield
 
     @campaign_capability
@@ -216,13 +251,6 @@ class CampaignMode(BotMode):
     def _set_bedroom_clock(self, trainer_gender: str) -> Generator:
         yield from reach_bedroom_clock(trainer_gender)
         yield from set_clock()
-
-    @campaign_capability
-    def _reach_route102(
-        self, map_group: int, map_number: int, tile_x: int, tile_y: int
-    ) -> Generator:
-        yield from navigate_to_catalog_location(map_group, map_number, tile_x, tile_y)
-        yield from save_campaign_checkpoint(3)
 
     @campaign_capability
     def _catch_wild_pokemon(
@@ -273,15 +301,6 @@ class CampaignMode(BotMode):
                 f"{destination_map.name} {(tile_x, tile_y)}."
             )
         yield from heal_in_pokemon_center(pokemon_center)
-
-    @campaign_capability
-    def _ev_train_captured_pokemon(self, target_level: int) -> Generator:
-        ev_train_mode = EVTrainMode()
-        yield from self._run_with_delegate(
-            ev_train_mode,
-            ev_train_mode.run_until_party_level(target_level, include_shiny=False),
-        )
-        yield from save_campaign_checkpoint(3)
 
     @staticmethod
     def _mission_training_location(
@@ -433,3 +452,13 @@ class CampaignMode(BotMode):
             if step.tile_x is not None:
                 location += f" ({step.tile_x}, {step.tile_y})"
         context.message = f"{step.step_order}. {step.name}{location}"
+        self._publish_campaign_state(
+            step=step.name,
+            step_order=step.step_order,
+            objective=context.message,
+            pause_reason=None,
+        )
+
+    @staticmethod
+    def _publish_campaign_state(**values: str | int | None) -> None:
+        context.campaign_state.update(values)
