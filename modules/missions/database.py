@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 SCHEMA_VERSION = 8
-CATALOG_VERSION = 1
+CATALOG_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -415,8 +415,6 @@ class MissionsDatabase:
         """Load the versioned built-in mission catalogue."""
         catalog_path = Path(__file__).with_name(f"catalog_v{CATALOG_VERSION}.sql")
         self._connection.executescript(catalog_path.read_text(encoding="utf-8"))
-        story_catalog_path = Path(__file__).with_name("catalog_rse_story_v1.sql")
-        self._connection.executescript(story_catalog_path.read_text(encoding="utf-8"))
 
     def mission_plan(self, game_code: str, mission_code: str) -> MissionPlan | None:
         mission = self._connection.execute(
