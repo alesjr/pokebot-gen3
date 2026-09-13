@@ -58,3 +58,6 @@
 - [x] 8.1 Remover TODO e lógica parcial da captura Route 102 substituídos pela execução declarativa e capacidades existentes; confirmar ausência de segundo fluxo de captura
 - [x] 8.2 Remover branches, helpers e imports Campaign tornados sem uso pela delegação genérica; confirmar que módulos originais de batalha, cura, PC, starter e treino continuam sendo os pontos únicos de implementação
 - [x] 8.3 Revisar diff final somente contra escopo desta mudança; confirmar ausência de Living Dex, battle policy, battle handler paralelo, `pokecenter_loop` novo, framework, dependência ou infraestrutura adicional
+- [x] 8.4 Manter `CampaignExecutor` como único orquestrador de etapas; mover sequências RSE ao catálogo e limitar `RSECampaignController` à interface de operações indivisíveis
+- [x] 8.5 Separar deslocamento até o rival em etapas atômicas identificadas por `action`; manter em `action_params` somente argumentos e condições explícitas
+- [x] 8.6 Materializar catálogo como `INSERT ... VALUES` com IDs estáveis; remover CTEs, joins, updates, deletes e upserts do arquivo de dados; carregar somente quando banco estiver vazio

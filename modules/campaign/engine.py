@@ -10,11 +10,15 @@ from modules.map_data import get_map_enum
 from modules.missions.database import MissionPlan, MissionStep, MissionsDatabase, StepCondition
 from modules.modes._interface import BotModeError
 from modules.modes.util import (
+    ensure_facing_direction,
     navigate_to,
     save_the_game,
+    talk_to_npc,
     wait_for_player_avatar_to_be_controllable,
+    walk_through_warp,
 )
 from modules.player import get_player_avatar, get_player_location
+from modules.tasks import get_global_script_context, is_waiting_for_input
 
 
 def save_campaign_checkpoint(mission_number: int) -> Generator:
@@ -79,6 +83,8 @@ class CartridgeStateReader:
         if source_type == "tile":
             x, y = get_player_avatar().local_coordinates
             return f"{x}:{y}"
+        if source_type == "script" and source_key == "active":
+            return get_global_script_context().is_active
         if source_type == "item":
             from modules.items import get_item_bag, get_item_by_name
 
@@ -209,6 +215,8 @@ class CampaignExecutor:
             current_step_id=mission.steps[0].id,
         )
         for step in mission.steps:
+            if not self._step_is_enabled(step, mission.rules):
+                continue
             complete, observations = self._evaluate(step, "complete", required=True)
             self._database.record_observations(
                 self._profile, mission.mission_game_id, observations
@@ -225,9 +233,6 @@ class CampaignExecutor:
                     raise BotModeError(
                         f"Campaign step prerequisite not satisfied: {step.code}:{purpose}"
                     )
-            capability = self._capability_resolver.resolve(
-                step.action, step.action_params, step, mission.rules
-            )
             self._database.update_progress(
                 self._profile,
                 mission.mission_game_id,
@@ -236,7 +241,7 @@ class CampaignExecutor:
             )
             if self._on_step_started is not None:
                 self._on_step_started(step)
-            while (yield from self._run_capability(capability)):
+            while (yield from self._run_step_action(step, mission.rules)):
                 complete, observations = self._evaluate(
                     step, "complete", required=True
                 )
@@ -245,9 +250,6 @@ class CampaignExecutor:
                 )
                 if complete:
                     break
-                capability = self._capability_resolver.resolve(
-                    step.action, step.action_params, step, mission.rules
-                )
             complete, observations = self._evaluate(step, "complete", required=True)
             self._database.record_observations(
                 self._profile, mission.mission_game_id, observations
@@ -287,6 +289,333 @@ class CampaignExecutor:
             current_step_id=None,
         )
 
+    def _run_step_action(
+        self, step: MissionStep, rules: dict[str, object]
+    ) -> Generator:
+        if step.action.startswith("operation:"):
+            operation = step.action.removeprefix("operation:")
+            parameters = self._capability_resolver.resolve_data(
+                step.action_params, step, rules
+            )
+            if not isinstance(parameters, dict):
+                raise BotModeError(
+                    f"Campaign operation parameters must be an object: {step.code}"
+                )
+            action = {"operation": operation, **parameters}
+            capability = ResolvedCapability(
+                step.action,
+                self._run_catalog_action,
+                {"action": action, "step_code": step.code, "index": 1},
+            )
+            return (yield from self._run_capability(capability))
+        if step.action != "sequence":
+            capability = self._capability_resolver.resolve(
+                step.action, step.action_params, step, rules
+            )
+            return (yield from self._run_capability(capability))
+
+        parameters = self._capability_resolver.resolve_data(
+            step.action_params, step, rules
+        )
+        if not isinstance(parameters, dict):
+            raise BotModeError(
+                f"Campaign sequence parameters must be an object: {step.code}"
+            )
+        required_hms = parameters.get("required_hms", [])
+        if not isinstance(required_hms, list) or not all(
+            isinstance(move, str) for move in required_hms
+        ):
+            raise BotModeError(
+                f"Campaign required_hms must be a list of names: {step.code}"
+            )
+        if required_hms:
+            capability = ResolvedCapability(
+                f"sequence:{step.code}:required_hms",
+                self._ensure_required_hms,
+                {"required_hms": required_hms},
+            )
+            if (yield from self._run_capability(capability)):
+                return True
+
+        actions = self._select_sequence_actions(parameters, step.code)
+        for index, action in enumerate(actions, start=1):
+            if not self._catalog_action_is_enabled(action, step.code, index):
+                continue
+            reference = action.get("capability")
+            if reference is None:
+                capability = ResolvedCapability(
+                    f"sequence:{step.code}:{index}",
+                    self._run_catalog_action,
+                    {"action": action, "step_code": step.code, "index": index},
+                )
+            else:
+                capability_parameters = action.get("parameters", {})
+                if not isinstance(reference, str) or not isinstance(
+                    capability_parameters, dict
+                ):
+                    raise BotModeError(
+                        f"Campaign sequence capability is invalid: {step.code}:{index}"
+                    )
+                capability = self._capability_resolver.resolve(
+                    reference, capability_parameters, step, rules
+                )
+            if (yield from self._run_capability(capability)):
+                return True
+        return False
+
+    def _step_is_enabled(
+        self, step: MissionStep, rules: dict[str, object]
+    ) -> bool:
+        if not step.action.startswith("operation:"):
+            return True
+        parameters = self._capability_resolver.resolve_data(
+            step.action_params, step, rules
+        )
+        if not isinstance(parameters, dict):
+            raise BotModeError(
+                f"Campaign operation parameters must be an object: {step.code}"
+            )
+        return self._catalog_action_is_enabled(parameters, step.code, 1)
+
+    @staticmethod
+    def _select_sequence_actions(
+        parameters: dict[str, object], step_code: str
+    ) -> list[dict[str, object]]:
+        actions = parameters.get("actions")
+        if not isinstance(actions, list) or not actions:
+            raise BotModeError(
+                f"Campaign sequence actions must be a non-empty list: {step_code}"
+            )
+        if not all(isinstance(action, dict) for action in actions):
+            raise BotModeError(
+                f"Campaign sequence actions must be objects: {step_code}"
+            )
+        return actions
+
+    def _catalog_action_is_enabled(
+        self, action: dict[str, object], step_code: str, index: int
+    ) -> bool:
+        binding_conditions = action.get("when_binding", [])
+        if isinstance(binding_conditions, dict):
+            binding_conditions = [binding_conditions]
+        if not isinstance(binding_conditions, list):
+            raise BotModeError(
+                f"Campaign binding conditions must be a list: {step_code}:{index}"
+            )
+        for condition in binding_conditions:
+            if not isinstance(condition, dict) or "value" not in condition:
+                raise BotModeError(
+                    f"Campaign binding condition is invalid: {step_code}:{index}"
+                )
+            if "equals" in condition and condition["value"] != condition["equals"]:
+                return False
+            if "not_equals" in condition and condition["value"] == condition["not_equals"]:
+                return False
+        conditions = action.get("when", [])
+        if isinstance(conditions, dict):
+            conditions = [conditions]
+        if not isinstance(conditions, list):
+            raise BotModeError(
+                f"Campaign action conditions must be a list: {step_code}:{index}"
+            )
+        for condition_data in conditions:
+            if not isinstance(condition_data, dict):
+                raise BotModeError(
+                    f"Campaign action condition must be an object: {step_code}:{index}"
+                )
+            try:
+                condition = StepCondition(
+                    id=0,
+                    purpose="start",
+                    condition_group=1,
+                    source_type=str(condition_data["source_type"]),
+                    source_key=str(condition_data["source_key"]),
+                    operator=str(condition_data["operator"]),
+                    expected_value=str(condition_data["expected_value"]),
+                    value_type=str(condition_data.get("value_type", "text")),
+                )
+            except KeyError as error:
+                raise BotModeError(
+                    f"Campaign action condition is incomplete: {step_code}:{index}"
+                ) from error
+            actual = self._state_reader.read(
+                condition.source_type, condition.source_key
+            )
+            if not self._compare(actual, condition):
+                return False
+        return True
+
+    def _run_catalog_action(
+        self, action: dict[str, object], step_code: str, index: int
+    ) -> Generator:
+        operation = action.get("operation")
+        if operation == "navigate":
+            destination = get_map_enum(
+                (
+                    self._action_integer(action, "map_group", step_code, index),
+                    self._action_integer(action, "map_number", step_code, index),
+                )
+            )
+            coordinates = (
+                self._action_integer(action, "tile_x", step_code, index),
+                self._action_integer(action, "tile_y", step_code, index),
+            )
+            yield from wait_for_player_avatar_to_be_controllable(
+                str(action.get("button", "B")),
+                wait_for_no_script=True,
+                timeout_frames=self._action_timeout(action, step_code, index),
+            )
+            expecting_script = bool(action.get("expecting_script", True))
+            yield from navigate_to(
+                destination, coordinates, expecting_script=expecting_script
+            )
+            if expecting_script:
+                yield from self._wait_for_catalog_control(action)
+            return
+        if operation == "warp":
+            source_map = get_map_enum(
+                (
+                    self._action_integer(action, "map_group", step_code, index),
+                    self._action_integer(action, "map_number", step_code, index),
+                )
+            )
+            target_x = action.get("target_x")
+            if target_x is not None:
+                target_x = self._action_integer(
+                    action, "target_x", step_code, index
+                )
+            yield from walk_through_warp(
+                source_map,
+                self._action_direction(action, step_code, index),
+                target_x=target_x,
+                timeout_frames=self._action_timeout(action, step_code, index),
+            )
+            yield from self._wait_for_catalog_control(action)
+            return
+        if operation == "talk_to_npc":
+            yield from talk_to_npc(
+                self._action_integer(action, "local_object_id", step_code, index)
+            )
+            yield from self._wait_for_catalog_control(action)
+            return
+        if operation == "interact":
+            if "tile_x" in action or "tile_y" in action:
+                nested = dict(action)
+                nested["operation"] = "navigate"
+                yield from self._run_catalog_action(nested, step_code, index)
+            yield from ensure_facing_direction(
+                self._action_direction(action, step_code, index)
+            )
+            context.emulator.press_button("A")
+            yield
+            yield from self._wait_for_catalog_control(action)
+            return
+        if operation == "wait_for_control":
+            yield from self._wait_for_catalog_control(action)
+            return
+        if operation == "save":
+            yield from save_the_game()
+            return
+        if operation == "checkpoint":
+            yield from save_campaign_checkpoint(
+                self._action_integer(action, "mission_number", step_code, index)
+            )
+            return
+        if operation == "puzzle_solver":
+            from modules.modes.puzzle_solver import PuzzleSolverMode
+
+            yield from PuzzleSolverMode().run(return_to_caller=True)
+            return
+        raise BotModeError(
+            f"Unsupported Campaign operation {operation!r}: {step_code}:{index}"
+        )
+
+    @staticmethod
+    def _wait_for_catalog_control(action: dict[str, object]) -> Generator:
+        yield from wait_for_player_avatar_to_be_controllable(
+            str(action.get("button", "B")),
+            stable_frames=int(action.get("stable_frames", 30)),
+            wait_for_no_script=True,
+            timeout_frames=int(action.get("timeout_frames", 30_000)),
+        )
+
+    @staticmethod
+    def _action_direction(
+        action: dict[str, object], step_code: str, index: int
+    ) -> str:
+        direction = action.get("direction", "Up")
+        if direction not in {"Up", "Down", "Left", "Right"}:
+            raise BotModeError(
+                f"Campaign action has invalid direction: {step_code}:{index}"
+            )
+        return str(direction)
+
+    @classmethod
+    def _action_timeout(
+        cls, action: dict[str, object], step_code: str, index: int
+    ) -> int:
+        return cls._action_integer(
+            action, "timeout_frames", step_code, index, default=30_000
+        )
+
+    @staticmethod
+    def _action_integer(
+        action: dict[str, object],
+        key: str,
+        step_code: str,
+        index: int,
+        *,
+        default: int | None = None,
+    ) -> int:
+        value = action.get(key, default)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise BotModeError(
+                f"Campaign action requires non-negative integer {key}: "
+                f"{step_code}:{index}"
+            )
+        return value
+
+    @staticmethod
+    def _ensure_required_hms(required_hms: list[str]) -> Generator:
+        from modules.campaign.team import combat_potential, hm_coverage
+        from modules.items import get_item_bag
+        from modules.modes.util.items import teach_hm_or_tm
+        from modules.pokemon_party import get_party
+
+        for move_name in dict.fromkeys(required_hms):
+            party = list(get_party().non_eggs)
+            if any(
+                learned_move is not None
+                and learned_move.move.name.casefold() == move_name.casefold()
+                for pokemon in party
+                for learned_move in pokemon.moves
+            ):
+                continue
+            candidates = [
+                pokemon
+                for pokemon in party
+                if not pokemon.is_shiny and hm_coverage(pokemon, (move_name,))
+            ]
+            if not candidates:
+                raise BotModeError(
+                    f"Campaign party has no non-shiny Pokémon compatible with required HM {move_name}."
+                )
+            candidate = max(
+                candidates,
+                key=lambda pokemon: (
+                    len(hm_coverage(pokemon, required_hms)),
+                    combat_potential(pokemon),
+                ),
+            )
+            hm_entry = next(
+                entry
+                for entry in candidate.species.learnset.tm_hm
+                if entry.move.name.casefold() == move_name.casefold()
+            )
+            if get_item_bag().quantity_of(hm_entry.item) == 0:
+                raise BotModeError(f"Campaign does not own required HM {move_name}.")
+            yield from teach_hm_or_tm(hm_entry.item, candidate.index)
+
     def _run_capability(self, capability: ResolvedCapability) -> Generator:
         if self._on_capability_changed is not None:
             self._on_capability_changed(capability.delegate)
@@ -297,6 +626,11 @@ class CampaignExecutor:
                     restart_required = yield from self._before_capability_resume()
                     if restart_required:
                         return True
+                script_context = get_global_script_context()
+                if script_context is not None and is_waiting_for_input():
+                    context.emulator.press_button("A")
+                    yield
+                    continue
                 try:
                     yielded = next(generator)
                 except StopIteration:

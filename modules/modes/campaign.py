@@ -7,7 +7,6 @@ from modules.campaign import (
     CampaignExecutor,
     CartridgeStateReader,
     navigate_to_catalog_location,
-    save_campaign_checkpoint,
 )
 from modules.campaign.capabilities import CampaignCapabilityResolver, campaign_capability
 from modules.campaign.recovery import (
@@ -15,13 +14,11 @@ from modules.campaign.recovery import (
     heal_party_and_return,
     party_needs_healing,
 )
-from modules.campaign.rse import run_organize_party_at_pc
+from modules.campaign.rse import RSECampaignController
 from modules.battle_state import BattleOutcome, EncounterType
 from modules.battle_strategies import BattleStrategy
-from modules.clock import reach_bedroom_clock, set_clock
 from modules.context import context
 from modules.encounter import EncounterInfo
-from modules.memory import get_event_flag
 from modules.map_data import PokemonCenter, get_map_enum
 from modules.missions import MissionsDatabase
 from modules.missions.database import MissionPlan
@@ -31,12 +28,7 @@ from modules.modes._asserts import (
 )
 from modules.modes._interface import BattleAction, BotMode, BotModeError
 from modules.modes.ev_train import EVTrainMode
-from modules.modes.starters import (
-    StartersMode,
-    finish_rse_starter_sequence,
-    reach_rse_starter_bag,
-)
-from modules.modes.util import heal_in_pokemon_center, save_the_game, spin
+from modules.modes.util import heal_in_pokemon_center, spin
 from modules.player import get_player_location
 from modules.pokemon_party import get_party
 from modules.runtime import get_base_path
@@ -167,6 +159,7 @@ class CampaignMode(BotMode):
             database.initialize_builtin_catalog()
             capability_resolver = CampaignCapabilityResolver(
                 {
+                    "game": {"code": game_code},
                     "profile": {
                         "trainer_name": self._trainer_name,
                         "trainer_gender": self._trainer_gender,
@@ -234,23 +227,6 @@ class CampaignMode(BotMode):
                     pause_reason=None,
                 )
                 yield
-
-    @campaign_capability
-    def _choose_starter(self, starter: str, shiny_required: bool) -> Generator:
-        state_reader = CartridgeStateReader(starter)
-        if not state_reader.read("other", "owns_configured_shiny_starter"):
-            yield from reach_rse_starter_bag()
-            if not get_event_flag("SYS_POKEMON_GET") and not get_event_flag("RESCUED_BIRCH"):
-                yield from save_the_game()
-            starters_mode = StartersMode(starter, stop_on_shiny=shiny_required)
-            yield from self._run_with_delegate(starters_mode, starters_mode.run())
-        yield from finish_rse_starter_sequence()
-        yield from save_campaign_checkpoint(1)
-
-    @campaign_capability
-    def _set_bedroom_clock(self, trainer_gender: str) -> Generator:
-        yield from reach_bedroom_clock(trainer_gender)
-        yield from set_clock()
 
     @campaign_capability
     def _catch_wild_pokemon(
@@ -417,7 +393,7 @@ class CampaignMode(BotMode):
         self._active_capability = None
         try:
             yield from heal_in_pokemon_center(find_recovery_pokemon_center())
-            yield from run_organize_party_at_pc(
+            yield from RSECampaignController().organize_party_at_pc(
                 *terminal_tile,
                 storage_required=bool(
                     self._campaign_rules.get("shiny.storage_required", True)

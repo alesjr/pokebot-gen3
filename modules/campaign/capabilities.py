@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass
 from importlib import import_module
@@ -13,6 +14,31 @@ from modules.modes._interface import BotModeError
 
 _ALLOWED_MODULES = ("modules.campaign", "modules.clock", "modules.modes")
 _LOCAL_NAMESPACE = "campaign"
+
+
+class CampaignGameInterface(ABC):
+    """Strict interface for indivisible game-specific Campaign capabilities."""
+
+    @abstractmethod
+    def start_new_game(
+        self,
+        trainer_name: str,
+        trainer_gender: str,
+        *,
+        timeout_frames: int = 30_000,
+    ) -> Generator: ...
+
+    @abstractmethod
+    def organize_party_at_pc(
+        self,
+        tile_x: int,
+        tile_y: int,
+        storage_required: bool = True,
+        optimize_party: bool = True,
+        target_size: int = 6,
+        required_hms: list[str] | None = None,
+        temporary_required_species: list[str] | None = None,
+    ) -> Generator: ...
 
 
 def campaign_capability(function: Callable) -> Callable:
@@ -74,6 +100,15 @@ class CampaignCapabilityResolver:
         if kind == "mode":
             return self._resolve_mode(reference, target, resolved)
         return self._resolve_controller(reference, target, resolved)
+
+    def resolve_data(
+        self,
+        value: object,
+        step: MissionStep,
+        rules: Mapping[str, object] | None = None,
+    ) -> object:
+        """Resolve trusted catalogue bindings without invoking a capability."""
+        return self._resolve_value(value, step, rules or {})
 
     def _resolve_function(
         self,

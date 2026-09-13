@@ -26,11 +26,17 @@ Ver `proposal.md`. Dashboard e servidor web já controlam profile, modo, frames 
 
 `CampaignExecutor` continuará selecionando missão, avaliando condições e registrando observações. Alteração limitada: etapa carregará referência de capacidade e parâmetros; executor solicitará execução ao resolver genérico.
 
+`CampaignExecutor` também será o único componente autorizado a iterar sequências de ações de etapas. Sequências, condições intermediárias e variantes RSE ficam no catálogo. Implementações específicas de jogo devem cumprir interface explícita e conter somente operações indivisíveis; não podem encadear etapas ou criar outro loop de missão.
+
+Operações observáveis independentes devem ocupar etapas próprias. O campo `action` identifica diretamente a operação; `action_params` guarda somente seus argumentos, filtros de versão/gênero e estado de origem, sem listas opacas de ações.
+
 Alternativa rejeitada: novo workflow engine. Duplicaria loop, estado e listeners já existentes.
 
 ### 2. Catálogo versionado contém comportamento declarativo
 
 Schema manterá missões, jogos, etapas e condições. Etapas ganharão parâmetros estruturados e, quando necessário, regra de recuperação. Dados de missão sairão de métodos `_seed_*` específicos e serão carregados como conteúdo SQL versionado pelo próprio módulo de missões. Python manterá somente schema, migração, leitura e execução genérica.
+
+Catálogo usará somente `INSERT ... VALUES` com IDs explícitos e estáveis. Não usará CTE, `JOIN`, `CROSS JOIN`, `UPDATE`, `DELETE` ou `ON CONFLICT` para gerar registros. Durante desenvolvimento do catálogo, `stats/missions.db` e sidecars serão removidos antes da recriação; essa limpeza não pertence ao runtime da aplicação.
 
 Regras globais serão armazenadas uma vez por jogo/escopo, não copiadas em cada missão. Valores incluem tamanho de time, critério de treino, reserva HM, política shiny e ação de encontro único.
 
@@ -98,7 +104,7 @@ Dashboard lista ROMs, profiles e modes fornecidos pelo backend existente. Seleç
 
 ## Migration Plan
 
-1. Evoluir schema sem apagar observações ou progresso operacional existente.
+1. Durante desenvolvimento, recriar `stats/missions.db` a partir do schema e dos inserts diretos; saves e profiles permanecem intactos.
 2. Converter três missões RSE atuais para catálogo declarativo versionado.
 3. Substituir registro manual pelo resolver mantendo as mesmas condições de save.
 4. Integrar políticas globais e composição usando capacidades existentes.

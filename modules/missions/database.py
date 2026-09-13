@@ -413,6 +413,8 @@ class MissionsDatabase:
 
     def initialize_builtin_catalog(self) -> None:
         """Load the versioned built-in mission catalogue."""
+        if self._connection.execute("SELECT 1 FROM games LIMIT 1").fetchone() is not None:
+            return
         catalog_path = Path(__file__).with_name(f"catalog_v{CATALOG_VERSION}.sql")
         self._connection.executescript(catalog_path.read_text(encoding="utf-8"))
 
