@@ -7,7 +7,8 @@ O dashboard já permite operar uma instância do emulador, mas o modo Campaign a
 - Consolidar o dashboard como entrada para selecionar jogo, profile/save e modo, mantendo jogo manual e modos existentes disponíveis.
 - Tornar o catálogo de missões fonte de verdade para ordem, condições, localização, ação reutilizável, parâmetros e conclusão das campanhas Ruby, Sapphire e Emerald.
 - Resolver referências controladas a funções, controllers e modes internos existentes, com parâmetros vindos do catálogo, sem `eval()` arbitrário nem mapas crescentes de handlers por missão.
-- Derivar conclusão exclusivamente do estado real do save; persistir no banco somente execução e observações operacionais.
+- Derivar conclusão exclusivamente do estado real do save; não persistir progresso ou observações de execução no catálogo.
+- Retomar saves intermediários pela primeira etapa aplicável ao estado atual, sem pular silenciosamente para uma etapa posterior sem condição de início satisfeita.
 - Aplicar regras globais Campaign para captura obrigatória de shinies, starter shiny, primeira captura selvagem, preenchimento do time, treino preventivo, composição do time, HM Slayer e encontros únicos/lendários shiny.
 - Avaliar combatentes não shiny pelo potencial composto por status base e IVs; nunca usar level na seleção do melhor combatente. Level permanece somente como medida do requisito de treino da missão.
 - Reutilizar `StartersMode`, `CatchStrategy`, `EVTrainMode`, controllers de encontros únicos, navegação, cura, PC e leitura de save existentes.

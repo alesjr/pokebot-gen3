@@ -169,8 +169,6 @@ class CampaignMode(BotMode):
                 campaign=self,
             )
             executor = CampaignExecutor(
-                database,
-                context.profile.path.name,
                 CartridgeStateReader(self._starter),
                 capability_resolver,
                 self._on_step_started,

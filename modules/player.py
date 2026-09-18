@@ -81,11 +81,7 @@ class PlayerAvatar:
 
     def __ne__(self, other):
         if isinstance(other, PlayerAvatar):
-            return (
-                other._object_event != self._object_event
-                or other._player_avatar_data != self._player_avatar_data
-                or other._map_group_and_number == self._map_group_and_number
-            )
+            return not self.__eq__(other)
         else:
             return NotImplemented
 

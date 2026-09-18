@@ -1,4 +1,4 @@
-"""Mission catalogue and progress persistence."""
+"""Mission catalogue persistence."""
 
 from modules.missions.database import MissionsDatabase
 

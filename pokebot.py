@@ -47,6 +47,7 @@ class StartupSettings:
     use_opengl: bool
     emulation_speed: int
     always_on_top: bool
+    rng: bool
     config_path: str
 
 
@@ -89,6 +90,11 @@ def parse_arguments(bot_mode_names: list[str]) -> StartupSettings:
         "-t", "--always-on-top", action="store_true", help="Keep the bot window always on top of other windows."
     )
     parser.add_argument("-d", "--debug", action="store_true", help="Enable extra debug options and a debug menu.")
+    parser.add_argument(
+        "--rng",
+        action="store_true",
+        help="Use RNG manipulation instead of soft resets while hunting starter Pokémon.",
+    )
     parser.add_argument("-c", "--config", type=directory_arg, dest="config_path", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
@@ -107,6 +113,7 @@ def parse_arguments(bot_mode_names: list[str]) -> StartupSettings:
         use_opengl=bool(args.use_opengl),
         emulation_speed=int(args.emulation_speed or "1"),
         always_on_top=bool(args.always_on_top),
+        rng=bool(args.rng),
         config_path=args.config_path,
     )
 

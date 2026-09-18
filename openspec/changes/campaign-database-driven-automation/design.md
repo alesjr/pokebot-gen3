@@ -24,7 +24,7 @@ Ver `proposal.md`. Dashboard e servidor web já controlam profile, modo, frames 
 
 ### 1. Estender motor atual, não criar outro
 
-`CampaignExecutor` continuará selecionando missão, avaliando condições e registrando observações. Alteração limitada: etapa carregará referência de capacidade e parâmetros; executor solicitará execução ao resolver genérico.
+`CampaignExecutor` continuará selecionando missão e avaliando condições diretamente no save. Etapa carregará referência de capacidade e parâmetros; executor solicitará execução ao resolver genérico.
 
 `CampaignExecutor` também será o único componente autorizado a iterar sequências de ações de etapas. Sequências, condições intermediárias e variantes RSE ficam no catálogo. Implementações específicas de jogo devem cumprir interface explícita e conter somente operações indivisíveis; não podem encadear etapas ou criar outro loop de missão.
 
@@ -58,7 +58,7 @@ Alternativa rejeitada: copiar lógica dos modes para Campaign ou criar segundo b
 
 ### 5. Estado do save decide progresso
 
-Banco continuará aceitando somente estados operacionais (`locked`, `available`, `in_progress`) e observações. Seleção da próxima etapa sempre reavalia condições persistentes. Não será criada coluna `completed`.
+Banco contém somente catálogo, regras e condições. Não armazena progresso ou observações operacionais. Seleção da próxima etapa sempre reavalia condições persistentes do save.
 
 Save states poderão servir como checkpoints técnicos, mas nunca como prova isolada de missão concluída.
 
@@ -91,6 +91,14 @@ Starter e encontros únicos usam seus modes existentes com condição shiny. Ap�
 ### 10. Dashboard permanece cliente fino
 
 Dashboard lista ROMs, profiles e modes fornecidos pelo backend existente. Seleção inicia mesma aplicação/profile; troca de mode usa API atual. Nenhuma regra Campaign será duplicada em JavaScript.
+
+### 11. Retomada seleciona etapa aplicável sem salto silencioso
+
+Para cada missão pendente, `CampaignExecutor` avaliará conclusão e condições `start` das etapas contra um mesmo retrato do estado atual. Etapas incompletas com `start` falso poderão ser ignoradas somente durante busca por outra etapa incompleta cujo próprio `start` seja verdadeiro. Etapa posterior sem condição `start` não servirá como fallback universal quando houver lacuna de estado.
+
+O catálogo deverá cadastrar condições `start` determinísticas para etapas executáveis, incluindo mapa, script, flag ou variável necessária. Se nenhuma etapa for aplicável, executor interromperá automação com erro diagnóstico em vez de avançar na ordem. Diálogos e transições terão etapas explícitas de continuação ou recuperação no catálogo.
+
+Alternativa rejeitada: exceções Python por número ou nome de step. Corrigiriam casos isolados e manteriam seleção divergente do catálogo.
 
 ## Risks / Trade-offs
 

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from collections.abc import Callable, Generator
+from datetime import datetime
 from typing import Protocol
 
 from modules.campaign.capabilities import CampaignCapabilityResolver, ResolvedCapability
 from modules.context import context
+from modules.map import get_map_data
 from modules.map_data import get_map_enum
-from modules.missions.database import MissionPlan, MissionStep, MissionsDatabase, StepCondition
+from modules.missions.database import MissionPlan, MissionStep, StepCondition
 from modules.modes._interface import BotModeError
 from modules.modes.util import (
     ensure_facing_direction,
@@ -71,7 +74,7 @@ class CartridgeStateReader:
 
     def read(self, source_type: str, source_key: str) -> object:
         from modules.memory import game_has_started, get_event_flag, get_event_var
-        from modules.player import get_player_avatar
+        from modules.player import get_player_avatar, player_avatar_is_controllable
 
         if source_type == "flag":
             return get_event_flag(source_key)
@@ -85,6 +88,8 @@ class CartridgeStateReader:
             return f"{x}:{y}"
         if source_type == "script" and source_key == "active":
             return get_global_script_context().is_active
+        if source_type == "other" and source_key == "avatar_controllable":
+            return player_avatar_is_controllable()
         if source_type == "item":
             from modules.items import get_item_bag, get_item_by_name
 
@@ -115,6 +120,14 @@ class CartridgeStateReader:
                 return sum(not pokemon.is_shiny for pokemon in party)
         if source_type == "other" and source_key == "game_started":
             return game_has_started()
+        if source_type == "other" and source_key == "player_identity":
+            from modules.player import get_player
+
+            return "brendan" if get_player().gender == "male" else "may"
+        if source_type == "other" and source_key == "rival_identity":
+            from modules.player import get_player
+
+            return "brendan" if get_player().gender == "female" else "may"
         if source_type == "other" and source_key == "pokedex_owned_count":
             from modules.pokedex import get_pokedex
 
@@ -183,21 +196,18 @@ class CampaignExecutor:
 
     def __init__(
         self,
-        database: MissionsDatabase,
-        profile: str,
         state_reader: StateReader,
         capability_resolver: CampaignCapabilityResolver,
         on_step_started: Callable[[MissionStep], None] | None = None,
         on_capability_changed: Callable[[object | None], None] | None = None,
         before_capability_resume: Callable[[], Generator] | None = None,
     ):
-        self._database = database
-        self._profile = profile
         self._state_reader = state_reader
         self._capability_resolver = capability_resolver
         self._on_step_started = on_step_started
         self._on_capability_changed = on_capability_changed
         self._before_capability_resume = before_capability_resume
+        self._state_snapshot: dict[tuple[str, str], object] | None = None
 
     def is_complete(self, mission: MissionPlan) -> bool:
         if not mission.steps:
@@ -208,63 +218,31 @@ class CampaignExecutor:
     def run(self, mission: MissionPlan) -> Generator:
         if not mission.steps:
             raise BotModeError(f"Campaign mission has no steps: {mission.code}")
-        self._database.update_progress(
-            self._profile,
-            mission.mission_game_id,
-            status="available",
-            current_step_id=mission.steps[0].id,
-        )
-        for step in mission.steps:
-            if not self._step_is_enabled(step, mission.rules):
-                continue
-            complete, observations = self._evaluate(step, "complete", required=True)
-            self._database.record_observations(
-                self._profile, mission.mission_game_id, observations
-            )
-            if complete:
-                continue
-            for purpose in ("unlock", "start"):
-                allowed, prerequisite_observations = self._evaluate(step, purpose, required=False)
-                if prerequisite_observations:
-                    self._database.record_observations(
-                        self._profile, mission.mission_game_id, prerequisite_observations
-                    )
-                if not allowed:
-                    raise BotModeError(
-                        f"Campaign step prerequisite not satisfied: {step.code}:{purpose}"
-                    )
-            self._database.update_progress(
-                self._profile,
-                mission.mission_game_id,
-                status="in_progress",
-                current_step_id=step.id,
-            )
+        while True:
+            step = self._select_next_step(mission)
+            if step is None:
+                return
+            allowed, _ = self._evaluate(step, "unlock", required=False)
+            if not allowed:
+                raise BotModeError(
+                    f"Campaign step prerequisite not satisfied: {step.code}:unlock"
+                )
             if self._on_step_started is not None:
                 self._on_step_started(step)
+            context.emulator.create_save_state(
+                f"Campaign_Mission_{mission.id}_Step_{step.step_order}"
+            )
             while (yield from self._run_step_action(step, mission.rules)):
-                complete, observations = self._evaluate(
-                    step, "complete", required=True
-                )
-                self._database.record_observations(
-                    self._profile, mission.mission_game_id, observations
-                )
+                complete, _ = self._evaluate(step, "complete", required=True)
                 if complete:
                     break
-            complete, observations = self._evaluate(step, "complete", required=True)
-            self._database.record_observations(
-                self._profile, mission.mission_game_id, observations
-            )
+            complete, _ = self._evaluate(step, "complete", required=True)
             if not complete and step.recovery_action is not None:
                 recovery = self._capability_resolver.resolve(
                     step.recovery_action, step.recovery_params, step, mission.rules
                 )
                 while (yield from self._run_capability(recovery)):
-                    complete, observations = self._evaluate(
-                        step, "complete", required=True
-                    )
-                    self._database.record_observations(
-                        self._profile, mission.mission_game_id, observations
-                    )
+                    complete, _ = self._evaluate(step, "complete", required=True)
                     if complete:
                         break
                     recovery = self._capability_resolver.resolve(
@@ -273,20 +251,56 @@ class CampaignExecutor:
                         step,
                         mission.rules,
                     )
-                complete, observations = self._evaluate(step, "complete", required=True)
-                self._database.record_observations(
-                    self._profile, mission.mission_game_id, observations
-                )
+                complete, _ = self._evaluate(step, "complete", required=True)
             if not complete:
                 raise BotModeError(
                     f"Campaign step returned without satisfying completion conditions: {step.code}"
                 )
 
-        self._database.update_progress(
-            self._profile,
-            mission.mission_game_id,
-            status="available",
-            current_step_id=None,
+    def _select_next_step(self, mission: MissionPlan) -> MissionStep | None:
+        rejected: list[str] = []
+        incomplete = False
+        self._state_snapshot = {}
+        try:
+            for step in mission.steps:
+                complete, _ = self._evaluate(step, "complete", required=True)
+                if complete:
+                    continue
+                incomplete = True
+                start_conditions = tuple(
+                    condition
+                    for condition in step.conditions
+                    if condition.purpose == "start"
+                )
+                if not start_conditions:
+                    rejected.append(f"{step.code}: missing start conditions")
+                    continue
+                applicable, observations = self._evaluate(
+                    step, "start", required=True
+                )
+                if not applicable:
+                    rejected.append(
+                        f"{step.code}: "
+                        + ", ".join(
+                            f"{condition.source_type}:{condition.source_key}="
+                            f"{actual!r} {condition.operator} "
+                            f"{condition.expected_value!r} ({matched})"
+                            for condition, actual, matched in observations
+                        )
+                    )
+                    continue
+                if not self._step_is_enabled(step, mission.rules):
+                    rejected.append(f"{step.code}: action conditions not satisfied")
+                    continue
+                return step
+        finally:
+            self._state_snapshot = None
+        if not incomplete:
+            return None
+        raise BotModeError(
+            f"Campaign mission {mission.code} has no applicable incomplete step. "
+            + "Rejected: "
+            + "; ".join(rejected)
         )
 
     def _run_step_action(
@@ -301,6 +315,7 @@ class CampaignExecutor:
                 raise BotModeError(
                     f"Campaign operation parameters must be an object: {step.code}"
                 )
+            parameters = self._select_operation_variant(parameters, step.code)
             action = {"operation": operation, **parameters}
             capability = ResolvedCapability(
                 step.action,
@@ -375,7 +390,39 @@ class CampaignExecutor:
             raise BotModeError(
                 f"Campaign operation parameters must be an object: {step.code}"
             )
+        parameters = self._select_operation_variant(parameters, step.code)
         return self._catalog_action_is_enabled(parameters, step.code, 1)
+
+    def _select_operation_variant(
+        self, parameters: dict[str, object], step_code: str
+    ) -> dict[str, object]:
+        variant_source = parameters.get("variant_source")
+        variants = parameters.get("variants")
+        if variant_source is None and variants is None:
+            return parameters
+        if not isinstance(variant_source, dict) or not isinstance(variants, dict):
+            raise BotModeError(
+                f"Campaign operation variant configuration is invalid: {step_code}"
+            )
+        try:
+            source_type = str(variant_source["source_type"])
+            source_key = str(variant_source["source_key"])
+        except KeyError as error:
+            raise BotModeError(
+                f"Campaign operation variant source is incomplete: {step_code}"
+            ) from error
+        variant_name = str(self._read_state(source_type, source_key))
+        selected = variants.get(variant_name)
+        if not isinstance(selected, dict):
+            raise BotModeError(
+                f"Campaign operation variant {variant_name!r} is unavailable: {step_code}"
+            )
+        common = {
+            key: value
+            for key, value in parameters.items()
+            if key not in {"variant_source", "variants"}
+        }
+        return {**common, **selected}
 
     @staticmethod
     def _select_sequence_actions(
@@ -438,9 +485,7 @@ class CampaignExecutor:
                 raise BotModeError(
                     f"Campaign action condition is incomplete: {step_code}:{index}"
                 ) from error
-            actual = self._state_reader.read(
-                condition.source_type, condition.source_key
-            )
+            actual = self._read_state(condition.source_type, condition.source_key)
             if not self._compare(actual, condition):
                 return False
         return True
@@ -479,6 +524,28 @@ class CampaignExecutor:
                     self._action_integer(action, "map_number", step_code, index),
                 )
             )
+            if action.get("navigate_to_warp", False) and get_player_location()[0] is source_map:
+                target = (
+                    self._action_integer(action, "target_map_group", step_code, index),
+                    self._action_integer(action, "target_map_number", step_code, index),
+                )
+                warps = [
+                    warp
+                    for warp in get_map_data(source_map, (0, 0)).warps
+                    if (warp.destination_map_group, warp.destination_map_number) == target
+                ]
+                if len(warps) != 1:
+                    raise BotModeError(
+                        f"Expected one warp from {source_map.name} to {target}, "
+                        f"found {len(warps)}: {step_code}:{index}"
+                    )
+                yield from wait_for_player_avatar_to_be_controllable(
+                    "B", wait_for_no_script=True,
+                    timeout_frames=self._action_timeout(action, step_code, index),
+                )
+                yield from navigate_to(
+                    source_map, warps[0].local_coordinates, expecting_script=True
+                )
             target_x = action.get("target_x")
             if target_x is not None:
                 target_x = self._action_integer(
@@ -490,7 +557,20 @@ class CampaignExecutor:
                 target_x=target_x,
                 timeout_frames=self._action_timeout(action, step_code, index),
             )
-            yield from self._wait_for_catalog_control(action)
+            if not action.get("handoff_on_target_map", False):
+                yield from self._wait_for_catalog_control(action)
+            if "target_map_group" in action or "target_map_number" in action:
+                target_map = get_map_enum(
+                    (
+                        self._action_integer(action, "target_map_group", step_code, index),
+                        self._action_integer(action, "target_map_number", step_code, index),
+                    )
+                )
+                if get_player_location()[0] is not target_map:
+                    raise BotModeError(
+                        f"Campaign warp reached {get_player_location()[0].name}; "
+                        f"expected {target_map.name}: {step_code}:{index}"
+                    )
             return
         if operation == "talk_to_npc":
             yield from talk_to_npc(
@@ -621,13 +701,30 @@ class CampaignExecutor:
             self._on_capability_changed(capability.delegate)
         try:
             generator = capability.run()
+            action = capability.arguments.get("action")
             while True:
                 if self._before_capability_resume is not None:
                     restart_required = yield from self._before_capability_resume()
                     if restart_required:
                         return True
+                if isinstance(action, dict) and action.get("handoff_on_target_map", False):
+                    target_map = get_map_enum(
+                        (
+                            self._action_integer(action, "target_map_group", capability.reference, 1),
+                            self._action_integer(action, "target_map_number", capability.reference, 1),
+                        )
+                    )
+                    target_group, target_number = target_map.value
+                    if self._read_state("map", "current") == f"{target_group}:{target_number}":
+                        yield
+                        return False
                 script_context = get_global_script_context()
-                if script_context is not None and is_waiting_for_input():
+                if (
+                    script_context is not None
+                    and script_context.is_active
+                    and not (isinstance(action, dict) and action.get("local_dialogue_control", False))
+                    and is_waiting_for_input()
+                ):
                     context.emulator.press_button("A")
                     yield
                     continue
@@ -649,16 +746,65 @@ class CampaignExecutor:
         )
         if not conditions:
             if required:
+                self._log_step_evaluation(step, purpose, False, ())
                 raise BotModeError(f"Campaign step has no {purpose} conditions: {step.code}")
+            self._log_step_evaluation(step, purpose, True, ())
             return True, ()
         groups: dict[int, list[bool]] = defaultdict(list)
         observations = []
         for condition in conditions:
-            actual = self._state_reader.read(condition.source_type, condition.source_key)
+            actual = self._read_state(condition.source_type, condition.source_key)
             matched = self._compare(actual, condition)
             groups[condition.condition_group].append(matched)
             observations.append((condition, actual, matched))
-        return any(all(results) for results in groups.values()), tuple(observations)
+        result = any(all(results) for results in groups.values())
+        observations = tuple(observations)
+        self._log_step_evaluation(step, purpose, result, observations)
+        return result, observations
+
+    def _read_state(self, source_type: str, source_key: str) -> object:
+        key = source_type, source_key
+        if self._state_snapshot is not None:
+            if key not in self._state_snapshot:
+                self._state_snapshot[key] = self._state_reader.read(
+                    source_type, source_key
+                )
+            return self._state_snapshot[key]
+        return self._state_reader.read(source_type, source_key)
+
+    @staticmethod
+    def _log_step_evaluation(
+        step: MissionStep,
+        purpose: str,
+        passed: bool,
+        observations: tuple[tuple[StepCondition, object, bool], ...],
+    ) -> None:
+        record = {
+            "timestamp": datetime.now().astimezone().isoformat(),
+            "mission_game_id": step.mission_game_id,
+            "step_id": step.id,
+            "step": step.step_order,
+            "code": step.code,
+            "name": step.name,
+            "purpose": purpose,
+            "passed": passed,
+            "conditions": [
+                {
+                    "group": condition.condition_group,
+                    "source": f"{condition.source_type}:{condition.source_key}",
+                    "actual": actual,
+                    "operator": condition.operator,
+                    "expected": condition.expected_value,
+                    "value_type": condition.value_type,
+                    "passed": matched,
+                }
+                for condition, actual, matched in observations
+            ],
+        }
+        with (context.profile.path / "campaign_steps.jsonl").open(
+            "a", encoding="utf-8"
+        ) as log_file:
+            log_file.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
 
     @staticmethod
     def _compare(actual: object, condition: StepCondition) -> bool:

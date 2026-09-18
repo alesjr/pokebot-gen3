@@ -14,7 +14,6 @@ from modules import exceptions
 from modules.context import context
 from modules.main import work_queue
 from modules.modes import get_bot_modes
-from modules.missions import MissionsDatabase
 from modules.profiles import PROFILES_DIRECTORY, clear_profile_data, create_profile, list_available_profiles
 from modules.roms import list_available_roms
 from modules.runtime import get_base_path
@@ -327,8 +326,6 @@ def create_instance_app() -> web.Application:
         )
 
         def clear() -> None:
-            with MissionsDatabase(get_base_path() / "stats" / "missions.db") as database:
-                database.clear_profile_progress(name)
             clear_profile_data(profile)
 
         if context.emulator is None:

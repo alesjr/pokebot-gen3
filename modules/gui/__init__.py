@@ -141,6 +141,7 @@ class PokebotGui:
             context.video = not self._startup_settings.no_video
             context.emulation_speed = self._startup_settings.emulation_speed
             context.debug = self._startup_settings.debug
+            context.use_rng_manipulation = self._startup_settings.rng
             context.bot_mode = self._startup_settings.bot_mode
 
             if context.debug:

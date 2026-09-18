@@ -3,11 +3,10 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 CATALOG_VERSION = 2
 
 
@@ -59,10 +58,6 @@ class MissionPlan:
     steps: tuple[MissionStep, ...]
 
 
-def _timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
-
-
 def _decode_mapping(value: str, field: str) -> dict[str, object]:
     decoded = json.loads(value)
     if not isinstance(decoded, dict):
@@ -81,7 +76,7 @@ def _decode_rule_value(value: str, value_type: str) -> object:
 
 
 class MissionsDatabase:
-    """SQLite schema for game-specific mission definitions and detected progress."""
+    """SQLite schema for game-specific mission definitions."""
 
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -105,7 +100,9 @@ class MissionsDatabase:
             "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL CHECK(version > 0))"
         )
         existing = self._connection.execute("SELECT version FROM schema_version").fetchone()
-        if existing is not None and existing[0] not in {1, 2, 3, 4, 5, 6, 7, SCHEMA_VERSION}:
+        if existing is not None and existing[0] not in {
+            1, 2, 3, 4, 5, 6, 7, 8, SCHEMA_VERSION
+        }:
             raise RuntimeError(
                 f"missions database schema version {existing[0]} is not supported; "
                 f"expected {SCHEMA_VERSION}"
@@ -208,32 +205,6 @@ class MissionsDatabase:
                 UNIQUE(step_id, purpose, condition_group, source_type, source_key, operator, expected_value)
             );
 
-            CREATE TABLE IF NOT EXISTS mission_progress (
-                id INTEGER PRIMARY KEY,
-                profile TEXT NOT NULL,
-                mission_game_id INTEGER NOT NULL,
-                current_step_id INTEGER,
-                status TEXT NOT NULL CHECK(status IN ('locked', 'available', 'in_progress')),
-                first_started_at TEXT,
-                last_evaluated_at TEXT NOT NULL,
-                FOREIGN KEY(mission_game_id) REFERENCES mission_games(id) ON DELETE CASCADE,
-                FOREIGN KEY(current_step_id, mission_game_id)
-                    REFERENCES mission_steps(id, mission_game_id) ON DELETE RESTRICT,
-                UNIQUE(profile, mission_game_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS mission_progress_observations (
-                id INTEGER PRIMARY KEY,
-                mission_progress_id INTEGER NOT NULL,
-                step_condition_id INTEGER NOT NULL,
-                observed_value TEXT NOT NULL,
-                matched INTEGER NOT NULL CHECK(matched IN (0, 1)),
-                observed_at TEXT NOT NULL,
-                FOREIGN KEY(mission_progress_id) REFERENCES mission_progress(id) ON DELETE CASCADE,
-                FOREIGN KEY(step_condition_id) REFERENCES step_conditions(id) ON DELETE CASCADE,
-                UNIQUE(mission_progress_id, step_condition_id)
-            );
-
             CREATE TABLE IF NOT EXISTS campaign_rules (
                 id INTEGER PRIMARY KEY,
                 game_id INTEGER NOT NULL,
@@ -253,13 +224,11 @@ class MissionsDatabase:
                 ON mission_steps(mission_game_id, step_order);
             CREATE INDEX IF NOT EXISTS idx_step_conditions_source
                 ON step_conditions(source_type, source_key);
-            CREATE INDEX IF NOT EXISTS idx_mission_progress_profile_status
-                ON mission_progress(profile, status);
             CREATE INDEX IF NOT EXISTS idx_campaign_rules_game
                 ON campaign_rules(game_id, rule_key);
 
             INSERT INTO schema_version(version)
-            SELECT 8 WHERE NOT EXISTS (SELECT 1 FROM schema_version);
+            SELECT 9 WHERE NOT EXISTS (SELECT 1 FROM schema_version);
 
             COMMIT;
             """
@@ -270,7 +239,7 @@ class MissionsDatabase:
             self._migrate_games_to_v2()
             version = 2
         if version == 2:
-            self._migrate_progress_to_v3()
+            self._connection.execute("UPDATE schema_version SET version = 3")
             version = 3
         if version in {3, 4, 5}:
             self._remove_battle_policies_to_v6()
@@ -281,6 +250,9 @@ class MissionsDatabase:
         if version == 7:
             self._migrate_training_targets_to_v8()
             version = 8
+        if version == 8:
+            self._remove_mission_progress_to_v9()
+            version = 9
         if version != SCHEMA_VERSION:
             raise RuntimeError(
                 f"missions database schema version {version} is not supported; expected {SCHEMA_VERSION}"
@@ -339,48 +311,16 @@ class MissionsDatabase:
             """
         )
 
-    def _migrate_progress_to_v3(self) -> None:
-        self._connection.execute("PRAGMA foreign_keys=OFF")
-        try:
-            self._connection.executescript(
-                """
-                BEGIN IMMEDIATE;
-                DROP INDEX IF EXISTS idx_mission_progress_profile_status;
-                CREATE TABLE mission_progress_v3 (
-                    id INTEGER PRIMARY KEY,
-                    profile TEXT NOT NULL,
-                    mission_game_id INTEGER NOT NULL,
-                    current_step_id INTEGER,
-                    status TEXT NOT NULL CHECK(status IN ('locked', 'available', 'in_progress')),
-                    first_started_at TEXT,
-                    last_evaluated_at TEXT NOT NULL,
-                    FOREIGN KEY(mission_game_id) REFERENCES mission_games(id) ON DELETE CASCADE,
-                    FOREIGN KEY(current_step_id, mission_game_id)
-                        REFERENCES mission_steps(id, mission_game_id) ON DELETE RESTRICT,
-                    UNIQUE(profile, mission_game_id)
-                );
-                INSERT INTO mission_progress_v3(
-                    id, profile, mission_game_id, current_step_id, status,
-                    first_started_at, last_evaluated_at
-                )
-                SELECT
-                    id, profile, mission_game_id, current_step_id,
-                    CASE WHEN status = 'completed' THEN 'available' ELSE status END,
-                    first_started_at, last_evaluated_at
-                FROM mission_progress;
-                DROP TABLE mission_progress;
-                ALTER TABLE mission_progress_v3 RENAME TO mission_progress;
-                CREATE INDEX idx_mission_progress_profile_status
-                    ON mission_progress(profile, status);
-                UPDATE schema_version SET version = 3;
-                COMMIT;
-                """
-            )
-        finally:
-            self._connection.execute("PRAGMA foreign_keys=ON")
-        violation = self._connection.execute("PRAGMA foreign_key_check").fetchone()
-        if violation is not None:
-            raise RuntimeError(f"missions database foreign key violation: {tuple(violation)}")
+    def _remove_mission_progress_to_v9(self) -> None:
+        self._connection.executescript(
+            """
+            BEGIN IMMEDIATE;
+            DROP TABLE IF EXISTS mission_progress_observations;
+            DROP TABLE IF EXISTS mission_progress;
+            UPDATE schema_version SET version = 9;
+            COMMIT;
+            """
+        )
 
     def _migrate_games_to_v2(self) -> None:
         self._connection.execute("PRAGMA foreign_keys=OFF")
@@ -522,62 +462,3 @@ class MissionsDatabase:
             for row in rows
             if (plan := self.mission_plan(game_code, row["code"])) is not None
         )
-
-    def update_progress(
-        self,
-        profile: str,
-        mission_game_id: int,
-        *,
-        status: str,
-        current_step_id: int | None,
-    ) -> None:
-        if status not in {"locked", "available", "in_progress"}:
-            raise ValueError(f"invalid operational mission status: {status}")
-        now = _timestamp()
-        started_at = now if status == "in_progress" else None
-        self._connection.execute(
-            """
-            INSERT INTO mission_progress(
-                profile, mission_game_id, current_step_id, status,
-                first_started_at, last_evaluated_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(profile, mission_game_id) DO UPDATE SET
-                current_step_id=excluded.current_step_id,
-                status=excluded.status,
-                first_started_at=COALESCE(mission_progress.first_started_at, excluded.first_started_at),
-                last_evaluated_at=excluded.last_evaluated_at
-            """,
-            (profile, mission_game_id, current_step_id, status, started_at, now),
-        )
-
-    def record_observations(
-        self,
-        profile: str,
-        mission_game_id: int,
-        observations: tuple[tuple[StepCondition, object, bool], ...],
-    ) -> None:
-        progress = self._connection.execute(
-            "SELECT id FROM mission_progress WHERE profile = ? AND mission_game_id = ?",
-            (profile, mission_game_id),
-        ).fetchone()
-        if progress is None:
-            raise RuntimeError("mission progress must exist before recording observations")
-        observed_at = _timestamp()
-        self._connection.executemany(
-            """
-            INSERT INTO mission_progress_observations(
-                mission_progress_id, step_condition_id, observed_value, matched, observed_at
-            ) VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(mission_progress_id, step_condition_id) DO UPDATE SET
-                observed_value=excluded.observed_value,
-                matched=excluded.matched,
-                observed_at=excluded.observed_at
-            """,
-            (
-                (progress["id"], condition.id, str(value), int(matched), observed_at)
-                for condition, value, matched in observations
-            ),
-        )
-
-    def clear_profile_progress(self, profile: str) -> None:
-        self._connection.execute("DELETE FROM mission_progress WHERE profile = ?", (profile,))

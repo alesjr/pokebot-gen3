@@ -30,6 +30,14 @@ def advance_rng(advances: int = 1) -> int:
     return rng_value
 
 
+def restore_state_with_rng_advance(state: bytes, advances: int) -> Generator:
+    """Restore a retry point and select a different RNG state."""
+    context.emulator.load_save_state(state)
+    context.emulator.reset_held_buttons()
+    advance_rng(advances)
+    yield
+
+
 @debug.track
 def wait_for_unique_rng_value(max_frames: int | None = None) -> Generator:
     """Wait until the live RNG value has not been used by this profile."""

@@ -15,9 +15,6 @@ from modules.modes._interface import BotModeError
 from modules.modes.util import (
     ensure_facing_direction,
     navigate_to,
-    save_the_game,
-    wait_for_player_avatar_to_be_controllable,
-    walk_through_warp,
 )
 from modules.modes.util.pc_interaction import PCAction, interact_with_pc
 from modules.player import (
@@ -176,9 +173,3 @@ class RSECampaignController(CampaignGameInterface):
         )
         for actions in self._pc_action_batches(selected, storage_required):
             yield from interact_with_pc(actions)
-        yield from navigate_to(destination_map, (7, 8))
-        yield from walk_through_warp(destination_map, "Down", target_x=7)
-        yield from wait_for_player_avatar_to_be_controllable(
-            "B", stable_frames=30, wait_for_no_script=True, timeout_frames=4_000
-        )
-        yield from save_the_game()

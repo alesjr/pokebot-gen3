@@ -11,6 +11,7 @@ from modules.modes.util.walking import navigate_to
 from modules.player import get_player_avatar, get_player_location
 from modules.pokemon_party import get_party_size, get_party
 from modules.runtime import get_sprites_path
+from modules.rng_manipulation import restore_state_with_rng_advance
 from modules.save_data import get_save_data
 from ._asserts import SavedMapLocation, assert_save_game_exists, assert_saved_on_map
 from ._interface import BattleAction, BotMode, BotModeError
@@ -24,10 +25,16 @@ from .util import (
     wait_for_unique_rng_value,
     wait_until_task_is_active,
     wait_until_task_is_not_active,
-    walk_through_warp,
 )
 from ..battle_state import get_main_battle_callback, EncounterType
 from modules.tasks import get_task
+
+
+def _retry_starter(retry_state: bytes | None, attempt: int) -> Generator:
+    if retry_state is None:
+        yield from soft_reset(mash_random_keys=True)
+    else:
+        yield from restore_state_with_rng_advance(retry_state, attempt)
 
 
 def run_frlg() -> Generator:
@@ -43,8 +50,11 @@ def run_frlg() -> Generator:
     if starter_choice is None:
         return
 
+    retry_state = context.emulator.get_save_state() if context.use_rng_manipulation else None
+    attempt = 0
     while context.bot_mode != "Manual":
-        yield from soft_reset(mash_random_keys=True)
+        yield from _retry_starter(retry_state, attempt)
+        attempt += 1
         starter = starter_choice
         if starter == "Random":
             starter = random.choice(["Bulbasaur", "Charmander", "Squirtle"])
@@ -104,8 +114,11 @@ def run_rse_hoenn(
     if starter_choice not in {"Treecko", "Torchic", "Mudkip", "Random"}:
         raise BotModeError(f"Unsupported Hoenn starter: {starter_choice}")
 
+    retry_state = context.emulator.get_save_state() if context.use_rng_manipulation else None
+    attempt = 0
     while context.bot_mode != "Manual":
-        yield from soft_reset(mash_random_keys=True)
+        yield from _retry_starter(retry_state, attempt)
+        attempt += 1
 
         # Starter bag can be accessed from the right or from the bottom, make sure we are looking
         # at it in either case.
@@ -176,8 +189,11 @@ def run_rse_johto(get_active_encounter: Callable[[], EncounterInfo]):
     if starter_choice is None:
         return
 
+    retry_state = context.emulator.get_save_state() if context.use_rng_manipulation else None
+    attempt = 0
     while context.bot_mode != "Manual":
-        yield from soft_reset(mash_random_keys=True)
+        yield from _retry_starter(retry_state, attempt)
+        attempt += 1
         starter = starter_choice
         if starter == "Random":
             starter = random.choice(["Chikorita", "Cyndaquil", "Totodile"])
@@ -216,57 +232,6 @@ def run_rse_johto(get_active_encounter: Callable[[], EncounterInfo]):
             EncounterInfo.create(get_party()[-1], EncounterType.Gift),
             disable_auto_catch=True,
             do_not_log_battle_action=True,
-        )
-
-
-def reach_rse_starter_bag(*, timeout_frames: int = 12_000) -> Generator:
-    if get_event_flag("SYS_POKEMON_GET") or get_event_flag("RESCUED_BIRCH"):
-        return
-    yield from wait_for_player_avatar_to_be_controllable(
-        "B", stable_frames=120, wait_for_no_script=True, timeout_frames=timeout_frames
-    )
-    current_map = get_player_location()[0]
-    upper_houses = {
-        MapRSE.LITTLEROOT_TOWN_MAYS_HOUSE_2F: (MapRSE.LITTLEROOT_TOWN_MAYS_HOUSE_1F, (1, 1)),
-        MapRSE.LITTLEROOT_TOWN_BRENDANS_HOUSE_2F: (
-            MapRSE.LITTLEROOT_TOWN_BRENDANS_HOUSE_1F,
-            (7, 1),
-        ),
-    }
-    if current_map in upper_houses:
-        first_floor, stairs = upper_houses[current_map]
-        yield from navigate_to(current_map, stairs)
-        yield from walk_through_warp(current_map, "Up")
-        yield from wait_for_player_avatar_to_be_controllable(
-            "B", stable_frames=120, wait_for_no_script=True, timeout_frames=4_000
-        )
-        current_map = first_floor
-    exits = {
-        MapRSE.LITTLEROOT_TOWN_MAYS_HOUSE_1F: 1,
-        MapRSE.LITTLEROOT_TOWN_BRENDANS_HOUSE_1F: 8,
-    }
-    if current_map in exits:
-        yield from walk_through_warp(
-            current_map, "Down", target_x=exits[current_map], timeout_frames=5_000
-        )
-        yield from wait_for_player_avatar_to_be_controllable(
-            "B", stable_frames=120, wait_for_no_script=True, timeout_frames=4_000
-        )
-        current_map = get_player_location()[0]
-    if current_map is MapRSE.LITTLEROOT_TOWN:
-        yield from navigate_to(MapRSE.LITTLEROOT_TOWN, (11, 1))
-        yield from walk_through_warp(MapRSE.LITTLEROOT_TOWN, "Up", target_x=11)
-        yield from wait_for_player_avatar_to_be_controllable(
-            "B", stable_frames=120, wait_for_no_script=True, timeout_frames=timeout_frames
-        )
-        current_map = get_player_location()[0]
-    if current_map is MapRSE.ROUTE101:
-        yield from navigate_to(MapRSE.ROUTE101, (7, 15))
-        yield from ensure_facing_direction("Up")
-    if get_player_location()[0] is not MapRSE.ROUTE101 or get_event_var("ROUTE101_STATE") < 2:
-        raise BotModeError(
-            f"Starter bag not reached: map={get_player_location()[0].name} "
-            f"tile={get_player_avatar().local_coordinates} state={get_event_var('ROUTE101_STATE')}"
         )
 
 

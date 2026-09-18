@@ -50,6 +50,7 @@ class BotContext:
         self.fleet_client: Optional["FleetClient"] = None
         self.debug: bool = False
         self.testing: bool = False
+        self.use_rng_manipulation: bool = False
 
         self._current_message: str = ""
         self.campaign_state: dict[str, str | int | None] = {

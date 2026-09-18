@@ -1,6 +1,6 @@
 ## 1. Catálogo e persistência
 
-- [x] 1.1 Evoluir schema existente para parâmetros declarativos de ação, recuperação e regras globais por jogo; confirmar por inspeção que progresso continua sem estado `completed`
+- [x] 1.1 Evoluir schema existente para parâmetros declarativos de ação, recuperação e regras globais por jogo; manter progresso fora do banco e derivado do save
 - [x] 1.2 Mover dados das três missões RSE atuais dos métodos Python específicos para catálogo SQL versionado; confirmar que cada linha mantém jogo, ordem, localização, condições e ação equivalentes
 - [x] 1.3 Carregar ações, parâmetros e regras globais nos modelos de leitura existentes; confirmar que plano retornado pelo banco contém todos os campos necessários sem regra de missão embutida no leitor
 - [x] 1.4 Remover seeds e correções incrementais obsoletas somente após representação equivalente no catálogo; confirmar ausência de definições duplicadas para mesma missão
@@ -61,3 +61,12 @@
 - [x] 8.4 Manter `CampaignExecutor` como único orquestrador de etapas; mover sequências RSE ao catálogo e limitar `RSECampaignController` à interface de operações indivisíveis
 - [x] 8.5 Separar deslocamento até o rival em etapas atômicas identificadas por `action`; manter em `action_params` somente argumentos e condições explícitas
 - [x] 8.6 Materializar catálogo como `INSERT ... VALUES` com IDs estáveis; remover CTEs, joins, updates, deletes e upserts do arquivo de dados; carregar somente quando banco estiver vazio
+- [x] 8.7 Unificar todos os steps duplicados por gênero no fluxo de Littleroot; selecionar parâmetros de Brendan ou May pelo estado real do jogador
+- [x] 8.8 Remover persistência de progresso e observações de missão; reavaliar missão e step exclusivamente pelo save
+
+## 9. Retomada segura por estado
+
+- [x] 9.1 Alterar seleção de steps para executar somente etapa incompleta com condição `start` satisfeita; impedir fallback universal para etapa posterior sem `start`
+- [x] 9.2 Avaliar condições repetidas de cada seleção sobre valores observados consistentes do mesmo frame
+- [x] 9.3 Cadastrar condições `start` determinísticas para steps Campaign existentes, incluindo retomada do diálogo na casa do rival
+- [x] 9.4 Pausar Campaign com diagnóstico explícito quando nenhuma etapa incompleta for aplicável ao estado atual

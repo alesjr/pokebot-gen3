@@ -20,11 +20,26 @@ O Campaign SHALL considerar missão concluída somente quando condições persis
 
 #### Scenario: Reiniciar aplicação
 - **WHEN** aplicação reinicia durante missão
-- **THEN** Campaign relê o save, ignora observação operacional obsoleta e retoma primeira etapa ainda não comprovada
+- **THEN** Campaign relê o save e retoma primeira etapa ainda não comprovada
 
-#### Scenario: Progresso operacional divergente
-- **WHEN** banco indica etapa anteriormente executada mas save não comprova sua conclusão
-- **THEN** Campaign trata etapa como pendente
+#### Scenario: Retomar pelo estado real
+- **WHEN** Campaign volta a avaliar uma missão interrompida
+- **THEN** primeira etapa não comprovada pelo save é executada sem depender de progresso persistido no catálogo
+
+### Requirement: Seleção segura da etapa aplicável
+O Campaign SHALL usar as condições de início do catálogo para selecionar uma etapa incompleta compatível com o estado atual. Uma etapa incompleta cuja condição de início seja falsa MUST NOT autorizar execução de etapa posterior sem condição de início satisfeita. Na ausência de etapa aplicável, Campaign SHALL pausar com diagnóstico explícito.
+
+#### Scenario: Retomar durante diálogo
+- **WHEN** save é retomado com script de diálogo ativo dentro do mapa esperado
+- **THEN** Campaign seleciona a etapa cadastrada para concluir esse diálogo antes de avaliar deslocamentos posteriores
+
+#### Scenario: Etapa intermediária inaplicável
+- **WHEN** etapa incompleta possui condição de início falsa no estado atual
+- **THEN** Campaign procura somente etapa posterior cuja própria condição de início esteja satisfeita
+
+#### Scenario: Nenhuma etapa aplicável
+- **WHEN** nenhuma etapa incompleta possui condição de início satisfeita
+- **THEN** Campaign pausa informando missão, estado observado e condições rejeitadas, sem executar ação posterior incondicional
 
 ### Requirement: Despacho controlado de capacidades existentes
 O catálogo SHALL referenciar funções, controllers ou modes internos conhecidos com parâmetros declarativos. Executor SHALL rejeitar referências fora da lista interna permitida e SHALL reutilizar capacidades existentes em vez de duplicar comportamento.
@@ -158,4 +173,3 @@ O Campaign MUST NOT perseguir conclusão de Pokédex ou coleção Living Dex. Ca
 #### Scenario: Time completo sem requisito de captura
 - **WHEN** time atende composição e missão não exige captura
 - **THEN** Campaign não captura espécie apenas por ainda não possuí-la
-

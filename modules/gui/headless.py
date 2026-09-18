@@ -20,6 +20,7 @@ class PokebotHeadless:
         self.is_headless = True
 
     def run(self, startup_settings: "StartupSettings"):
+        context.use_rng_manipulation = startup_settings.rng
         if startup_settings.profile is None:
             web_port = os.environ.get("POKEBOT_INSTANCE_WEB_PORT")
             if not web_port:
